@@ -1,16 +1,21 @@
 # Aegis — Architecture and Technology Stack Proposal
 
-Status: **Proposal (Phase 0)**. No application code has been written yet. This document exists so the
-stack and the architecture can be reviewed before significant code lands.
+Status: **Proposal (Phase 0), revision 3.** No application code has been written yet.
 
-Aegis is an AI-native layer that sits across existing IT systems (ITSM, ITAM, endpoint management)
-and orchestrates incident investigation and governed remediation. It is a portfolio prototype, not a
-product. Every decision below is optimised for four things, in this order:
+Aegis is an **MCP server that governs agentic IT operations**. Any MCP-capable agent host (Claude
+Code, Claude Desktop, or a self-hosted agent loop) connects to Aegis and investigates and remediates
+incidents through it. Aegis enforces the workflow, classifies risk, gates writes behind human
+approval, verifies outcomes, and records an audit trail. Enterprise systems (ITSM, ITAM, endpoint
+management) sit behind Aegis as their own MCP servers.
 
-1. A working end-to-end demo that is reliable on stage.
-2. Architecture that a Solutions Engineer or AI Engineer can walk a customer through.
-3. Governance and explainability that hold up to an enterprise architect's questions.
-4. Easy local development and a cheap public deployment later.
+Design constraints, in priority order:
+
+1. **Zero running cost.** No Anthropic API key. The agent runs on the author's Claude Pro plan via
+   Claude Code or Claude Desktop, which are the sanctioned ways to use that plan. The hosted public demo
+   runs recorded traces and calls no model at all.
+2. A working end-to-end demo that is reliable in an interview.
+3. Architecture a Solutions Engineer can walk a customer through, with MCP at the centre.
+4. Governance and explainability that hold up to an enterprise architect.
 
 ---
 
@@ -18,318 +23,266 @@ product. Every decision below is optimised for four things, in this order:
 
 | Concern | Recommendation | One-line reason |
 |---|---|---|
-| Language (backend / agent) | **Python 3.12** | The lingua franca of AI engineering; first-class Anthropic SDK; Pydantic for typed tools. |
-| Backend framework | **FastAPI** | Async, typed, auto-generated OpenAPI docs, native SSE streaming, trivial to containerise. |
-| Agent runtime | **Anthropic SDK, hand-written tool loop inside a deterministic phase orchestrator** | Governance requires owning the loop. Frameworks hide exactly the parts we need to show. |
-| Model | **`claude-opus-5`** (configurable) | Strongest tool-use and reasoning at Opus pricing. Swap to `claude-sonnet-5` via env var for cheaper public demos. |
-| Structured decisions | **Structured outputs (`output_config.format`)** for diagnosis, recommendation, risk assessment | Guarantees schema-valid JSON the UI and audit log can rely on. |
-| Integration abstraction | **Model Context Protocol (MCP).** Aegis is an MCP host; every enterprise system is an MCP server | Open standard. Swapping the demo ITSM for ServiceNow means pointing config at a different MCP server. Tools are discovered, not hard-coded. |
-| Demo enterprise systems | **Three MCP servers shipped in the repo** (`itsm`, `itam`, `endpoint`), separate processes over Streamable HTTP, backed by synthetic data | Shows a real client/server boundary an interviewer can inspect with MCP Inspector. |
-| Enterprise data (demo) | **Separate simulated-enterprise SQLite database** seeded with synthetic data | Physically separates "Aegis's own state" from "the systems Aegis integrates with." |
-| Aegis state / audit | **SQLite via SQLAlchemy 2.0** (Postgres-ready) | Zero setup locally; one env var to move to Postgres for a hosted demo. |
-| Frontend | **React 18 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack Query** | Fast to build a dense, credible ops console; not a chatbot. |
-| Live investigation view | **Server-Sent Events** | One-directional stream of agent events; simpler and more proxy-friendly than WebSockets. |
-| Governance | **Declarative risk policy (YAML) + approval gate + append-only audit log** | Policy is data, not code buried in prompts. Reviewers can read it. |
-| Evaluation | **Scenario-based eval harness (pytest + JSON scenarios), metrics surfaced in the UI** | Shows AI evaluation discipline, not just a demo. |
-| Demo resilience | **`live` and `replay` agent modes** | Replay runs recorded traces with no API key: the demo never fails on stage and CI stays free. |
-| Packaging / deploy | **Single Docker image (FastAPI serves built SPA), docker-compose for dev** | One container to deploy to Fly.io / Render / Railway. |
-| Tooling | **uv, ruff, mypy, pytest** (backend); **pnpm, eslint, vitest** (frontend) | Modern, fast, and what current teams use. |
+| Core deliverable | **Aegis Gateway: an MCP server** (Python, official `mcp` SDK, Streamable HTTP) | The thing being showcased. Governance lives at the protocol layer, so it works with any host. |
+| Agent host (live demo) | **Claude Code on a Claude Pro plan**; Claude Desktop as an alternative | Zero token cost. Both are official MCP hosts. Claude Code exposes MCP prompts as slash commands, which makes a clean demo trigger. |
+| Agent host (optional, later) | **Aegis-owned loop against a local model via Ollama** | Also zero cost, fully offline, and demonstrates model independence. Connects to the same gateway. |
+| Enterprise systems (demo) | **Three MCP servers in the repo** (`itsm`, `itam`, `endpoint`) over synthetic data | Real process boundary. Inspectable with MCP Inspector. Swap one for a vendor MCP server via config. |
+| Workflow orchestration | **State machine inside the gateway**, enforced through tool availability and validation | The agent cannot execute before proposing, or resolve before verifying. Orchestration is enforced, not requested in a prompt. |
+| Governance | **YAML risk policy, approval gate, append-only audit log, default-deny for unclassified writes** | Policy is data a reviewer can read. Model's risk opinion is recorded; policy's classification decides. |
+| Console | **FastAPI + React/TypeScript/Vite + Tailwind + shadcn/ui, SSE for live events** | An ops console, not a chat window. Shows the investigation live as calls pass through the gateway. |
+| Persistence | **SQLite via SQLAlchemy 2.0**, two databases | `aegis.db` for Aegis state and audit; `enterprise_demo.db` owned by the demo servers only. Postgres is a URL change. |
+| Evaluation | **Scenario files + headless runs (`claude -p`) recorded through the gateway** | Scores root-cause accuracy, evidence citation, approval behaviour, and injection resistance. Metrics page in the console. |
+| Demo resilience | **Replay mode** from recorded gateway traces | Hosted demo needs no model, no key, no network to Anthropic. |
+| Packaging | **`make dev` locally; one Docker image for the hosted replay demo** | Free tier on Fly.io, Render, or Railway (verify current terms). |
+| Tooling | uv, ruff, mypy, pytest; pnpm, eslint, vitest | Current, fast, expected. |
 
 ---
 
-## 2. Why these choices
+## 2. Why this shape
 
-### 2.1 Python + FastAPI for the backend and agent
+### 2.1 Why the agent host is external, and why that is the better story
 
-- Hiring managers in AI Engineering and Solutions Engineering expect Python. It signals fluency with
-  the ecosystem (Anthropic SDK, Pydantic, evaluation tooling).
-- FastAPI gives typed request/response models, automatic OpenAPI docs at `/docs` (useful in a demo to
-  show "this is an API-first platform"), async I/O for concurrent MCP calls, and streaming
-  responses out of the box.
-- Alternative considered: **Next.js full-stack (TypeScript everywhere)**. Simpler single-language repo,
-  but the Python agent ecosystem and evaluation tooling are stronger, and a Python/TypeScript split
-  demonstrates both skill sets. Rejected for this project.
+The first draft of this proposal had Aegis own the model loop through the Anthropic API. That costs
+money per run, and the Agent SDK documentation states that claude.ai logins may not be used to power
+third-party agents. Running the loop inside Claude Code or Claude Desktop instead is fully covered by a
+Pro plan and costs nothing extra.
 
-### 2.2 Hand-written agent loop, not LangGraph / CrewAI / AutoGen
+It also produces a stronger architecture. If governance lived in Aegis's own loop, it would only
+protect Aegis's own agent. Putting it in an MCP server means **any** agent that connects is governed:
+Claude Code today, an enterprise's own agent platform tomorrow. That is the "MCP gateway" pattern that
+enterprise platform teams are converging on, and it is the sentence to lead with in a post or an
+interview: *the agent is replaceable; the governance is not.*
 
-This is the most important decision. The pitch of Aegis is *governed autonomy*. Governance lives in the
-loop: which tool is being called, what risk class it carries, whether it needs approval, what gets
-written to the audit log, what happens on failure. Agent frameworks abstract exactly those points away.
+### 2.2 What "orchestration" means here
 
-The loop itself is small (roughly 150 lines with the Anthropic SDK). Writing it makes the following
-visible and testable:
-
-- Every tool call passes through a **policy check** before execution.
-- Every tool call and result is written to the **audit log** as a discrete event.
-- Write actions raise an **approval request** and suspend the run until a human decides.
-- Tool results from enterprise systems are treated as **untrusted data** (prompt-injection hygiene).
-
-The trade-off: no built-in graph visualiser, checkpointing, or multi-agent primitives. Aegis does not
-need them. Should a later phase want subagents (e.g. a separate "remediation planner"), the
-orchestrator can spawn a second loop with a narrower tool set; the design leaves room for it.
-
-**Pattern used:** deterministic outer workflow, agentic inner steps. The outer state machine fixes the
-phases (`triage → investigate → diagnose → recommend → approve → remediate → verify → resolve`).
-Inside `investigate`, the model chooses which tools to call and in what order. Inside `diagnose`
-and `recommend`, the model produces a schema-constrained structured object. This gives the audience
-a predictable narrative while still showing real agentic tool selection.
-
-### 2.3 Model choice
-
-Default to **`claude-opus-5`** with adaptive thinking (on by default on Opus 5) and
-`output_config.effort` set to `medium` for the investigation loop and `high` for the diagnosis step.
-Model, effort, and max tokens are all environment configuration, never hard-coded.
-
-Pricing at the time of writing (Anthropic first-party API, may change; verify at
-https://docs.anthropic.com/en/docs/about-claude/pricing before quoting):
-
-| Model | Input $/1M | Output $/1M |
-|---|---|---|
-| `claude-opus-5` | $5.00 | $25.00 |
-| `claude-sonnet-5` | $2.00 | $10.00 |
-
-Estimate (inference, not measured): a full investigation is roughly 8 to 12 model turns. With prompt
-caching on the system prompt and tool definitions, expect well under $1 per investigation on Opus 5
-and well under $0.50 on Sonnet 5. The eval harness will measure this and the metrics page will show it.
-
-Two API features worth using explicitly because they map to enterprise concerns:
-
-- **Prompt caching** on the system prompt and tool list: cost control and latency.
-- **Server-side refusal fallbacks** (`fallbacks: "default"`, beta): resilience if a safety classifier
-  declines a request. Aegis's content is benign IT data, so this should never trigger, but showing
-  that the integration handles a `refusal` stop reason is good hygiene.
-
-### 2.4 Integration layer: MCP servers, an MCP host, and controlled tools
-
-The integration boundary is the **Model Context Protocol**. Aegis does not contain vendor SDK code or
-Python adapter classes. It is an MCP *host*: at startup it connects to the MCP servers listed in its
-config, calls `tools/list` on each, and registers what it finds. Every enterprise system, demo or
-real, is an MCP *server*.
+The gateway holds a state machine per investigation:
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│  Agent (Claude)                                                  │
-│  sees: tool names, descriptions, JSON schemas. Nothing else.     │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │ tool_use
-┌───────────────────────────────▼──────────────────────────────────┐
-│  Controlled Tools  (aegis/tools/*)                               │
-│  • wraps every discovered MCP tool                               │
-│  • risk class from policy: READ | WRITE_LOW | WRITE_MEDIUM |     │
-│    WRITE_HIGH | UNCLASSIFIED (default-deny for writes)           │
-│  • policy check → approval gate → audit event → tools/call       │
-│  • normalises / redacts server output before it reaches model    │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │ MCP (JSON-RPC over Streamable HTTP)
-┌───────────────────────────────▼──────────────────────────────────┐
-│  MCP Host  (aegis/mcp_host/*)   official `mcp` Python SDK        │
-│  • one client session per configured server                      │
-│  • tool discovery, namespacing (itsm.get_incident), health       │
-│  • reconnect, timeouts, per-server allow/deny lists              │
-└──────┬─────────────────┬─────────────────┬───────────────────────┘
-       │                 │                 │
-┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
-│ mcp-itsm    │   │ mcp-itam    │   │ mcp-endpoint│   ← shipped, synthetic data,
-│ (demo)      │   │ (demo)      │   │ (demo)      │     separate processes
-└─────────────┘   └─────────────┘   └─────────────┘
-  ServiceNow /       ServiceNow /      Intune / Jamf /  ← any MCP server, vendor
-  Freshservice /     Ivanti /          Ivanti Neurons     or community. None
-  Ivanti / Jira SM   Flexera                              tested or claimed.
+opened → investigating → diagnosed → proposed → awaiting_approval → approved | rejected
+       → executing → verified | verification_failed → resolved | escalated
 ```
 
-**Why MCP rather than in-process adapters.** It is an open standard with growing vendor support, it
-makes the integration boundary a real process boundary that an interviewer can inspect (MCP Inspector
-can connect to the demo servers directly), and it means "add a system" is a config change plus an MCP
-server, not a code change in Aegis. It is also the integration pattern hiring managers in AI and SE
-roles are currently asking about.
+Transitions are enforced by the gateway, not requested by a prompt:
 
-**Honest limitation, stated in the UI and docs.** MCP standardises how a tool is exposed, not what it
-means. ServiceNow's `incident`, Freshservice's `ticket`, and Ivanti's `ServiceReq` have different
-fields and state models. Aegis handles that at two levels:
+- `propose_remediation` is rejected unless a diagnosis has been recorded.
+- `execute_remediation` is rejected unless the proposal is approved by a human with the right role.
+- `resolve_investigation` is rejected unless verification has run, and the resolution text must
+  reflect the verdict (a failed verification cannot be resolved as fixed; it can be escalated).
+- Every read the agent performs is captured as evidence automatically, so "cite your evidence"
+  is checkable, not just requested.
 
-1. **The demo servers implement a documented canonical tool contract** (`docs/MCP_CONTRACT.md`): for
-   ITSM, tools such as `get_incident`, `search_incidents`, `add_work_note`, `resolve_incident`; for ITAM,
-   `get_asset`, `get_assets_for_user`; for Endpoint, `get_device`, `get_device_health`,
-   `get_installed_software`, `get_patch_status`, `restart_application`, `clear_disk_space`. A vendor
-   MCP server written to this contract drops in with zero prompt changes.
-2. **Any other MCP server can be attached as-is.** Its tools are discovered, namespaced by server, and
-   offered to the model with the server's own descriptions. The model does the semantic mapping. This
-   is more flexible and less predictable, which is exactly why the policy layer defaults unknown tools
-   to `UNCLASSIFIED` (reads allowed and logged, writes denied) until an administrator classifies them.
-   Attaching a second server live and watching the policy engine quarantine its write tools is a
-   planned demo moment.
+The host's model still decides *which* systems to query, in what order, what the root cause is, and
+what to propose. That part is agentic. The guardrails around it are deterministic.
 
-**Why not the Anthropic API's server-side MCP connector.** The Messages API can call MCP servers
-itself (`mcp_servers` + `mcp_toolset`). Aegis deliberately does not use it for governed tools, because
-the call would then execute inside Anthropic's infrastructure and the approval gate could not sit
-between the model's request and the execution. Aegis runs its own MCP client so that every call
-passes through policy and audit. This is the concrete reason to own the loop.
+### 2.3 Why MCP, and the honest limit
 
-**Transport.** Streamable HTTP for all servers. Locally `make dev` starts the three demo servers on
-their own ports; in Docker Compose they are separate services. stdio is supported by the SDK and can
-be enabled per server in config, but HTTP is the default because it matches how a vendor-hosted MCP
-server would be reached.
+MCP is an open standard for exposing tools to agents, with growing vendor support. It makes the
+integration boundary a real process boundary, and it is what hiring managers in AI and SE roles are
+asking about.
 
-**Aegis as an MCP server (optional, Phase 7).** A thin `aegis-mcp` server exposing
-`start_investigation`, `get_investigation`, `approve_action`. This lets Claude Desktop or Claude Code
-drive Aegis, and lets the project show both sides of the protocol. Low effort with the SDK's
-`FastMCP` helper; not on the critical path.
+The limit: MCP standardises how a tool is called, not what it means. ServiceNow's `incident`,
+Freshservice's `ticket`, and Ivanti's `ServiceReq` differ in fields and lifecycle. Aegis handles that
+two ways:
 
-### 2.5 Two databases, on purpose
+1. The demo servers implement a **documented canonical tool contract** (`docs/MCP_CONTRACT.md`). A
+   vendor server written to it drops in with no changes.
+2. **Any other MCP server can be attached as-is.** Its tools are discovered and namespaced by server.
+   The model does the semantic mapping. Because that is less predictable, unknown tools default to
+   `UNCLASSIFIED`: reads are allowed and logged, writes are denied until an administrator classifies
+   them in the policy file. Attaching a second server live and watching its write tools get
+   quarantined is a planned demo moment.
 
-| Database | Contains | Owned by |
-|---|---|---|
-| `enterprise_demo.db` | Synthetic users, devices, assets, software inventory, patch status, health telemetry, historical incidents | "The enterprise". Only the demo MCP servers touch it. The Aegis backend has no connection to it. |
-| `aegis.db` | Investigations, investigation events (audit log), evidence, diagnoses, recommendations, approvals, remediation runs, verification results, eval runs | Aegis itself. |
+Which vendors ship official MCP servers changes month to month and is not claimed anywhere in this
+project. The docs say "attach any MCP server" and stop there.
 
-This split is a deliberate architectural statement: Aegis's own store never holds a copy of enterprise
-master data, and the Aegis process never opens `enterprise_demo.db`. When a real MCP server replaces a
-demo one, the demo server and its database simply stop being started.
-Both are SQLite locally via SQLAlchemy 2.0; `aegis.db` can move to Postgres by changing one URL.
+### 2.4 Why not the Anthropic API's server-side MCP connector, or the Agent SDK
 
-The **demo endpoint MCP server also mutates `enterprise_demo.db`** when a remediation tool is called,
-which is what makes the before/after verification real rather than faked: `clear_disk_space` actually
-reduces the simulated device's disk utilisation, and the subsequent `get_device_health` read reflects
-it. The demo data model includes a small deterministic "device simulator" so effects are plausible
-(e.g. clearing temp files recovers a bounded amount of space, restarting Outlook resets crash count).
+- The Messages API can call MCP servers itself. The tool call then executes inside Anthropic's
+  infrastructure, so an approval gate cannot sit between request and execution. Aegis needs to be in
+  that path, so Aegis is the MCP server the host calls, and Aegis calls upstream.
+- The Agent SDK would let Aegis run the loop, but it requires an API key by policy. Not zero cost.
 
-### 2.6 Governance: policy, approvals, audit
+---
 
-- **Risk policy is a YAML file** (`policy/risk_policy.yaml`) mapping each tool to a risk class and an
-  approval rule. Example:
+## 3. Components
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│  Agent host (not part of Aegis)                                        │
+│  Claude Code (Pro)  |  Claude Desktop (Pro)  |  any MCP host           │
+│  Trigger: MCP prompt  /mcp__aegis__investigate_incident INC-1042       │
+└──────────────────────────────┬─────────────────────────────────────────┘
+                               │ MCP (Streamable HTTP)
+┌──────────────────────────────▼─────────────────────────────────────────┐
+│  AEGIS GATEWAY  (MCP server)                    backend/aegis/gateway  │
+│                                                                        │
+│  Tools exposed to the host                                             │
+│   • proxied enterprise READ tools   itsm_get_incident, itam_get_asset, │
+│     endpoint_get_device_health, ...  (auto-captured as evidence)       │
+│   • workflow tools                  start_investigation,               │
+│     record_diagnosis, propose_remediation, execute_remediation,        │
+│     verify_remediation, resolve_investigation                          │
+│  Prompts   investigate_incident (the demo entry point)                 │
+│  Resources aegis://policy, aegis://investigations/{id}                 │
+│                                                                        │
+│  Inside every tool call                                                │
+│   policy check → approval gate → audit event → upstream call → redact  │
+│                                                                        │
+│  State machine per investigation (section 2.2)                         │
+└──────┬───────────────────────┬──────────────────────┬──────────────────┘
+       │ MCP client            │ MCP client           │ MCP client
+┌──────▼──────┐         ┌──────▼──────┐        ┌──────▼──────┐
+│ mcp-itsm    │         │ mcp-itam    │        │ mcp-endpoint│   demo servers,
+│ (demo)      │         │ (demo)      │        │ (demo)      │   synthetic data,
+└──────┬──────┘         └──────┬──────┘        └──────┬──────┘   own processes
+       └───────────────────────┴──────────────────────┘
+                        enterprise_demo.db  (never opened by Aegis itself)
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  AEGIS CONSOLE  (FastAPI + React)               backend/aegis/api      │
+│  incidents · live investigation timeline · evidence · diagnosis ·      │
+│  recommendation + Approve/Reject · remediation · verification ·        │
+│  audit trail · device intelligence · agent activity · eval metrics     │
+│  reads aegis.db, subscribes to gateway events over SSE                 │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**One Python process or two.** The gateway (MCP endpoint at `/mcp`) and the console API (`/api`) are
+separate packages and can run as one process by mounting the MCP app into FastAPI, or as two. Default
+to one for `make dev` simplicity; the Docker Compose file can split them to show the boundary.
+
+**Approval mechanics.** `propose_remediation` returns a proposal id, the policy's risk class, and
+`status: awaiting_approval`. `execute_remediation(proposal_id)` checks the approval record; if still
+pending it waits up to a configurable timeout (with MCP progress notifications so the host shows
+activity) and returns `pending` if the timeout passes, so the agent can tell the user and stop cleanly.
+Approve or Reject happens in the console, by a persona with the required role, and is written to the
+audit log with the approver identity.
+
+**Verification mechanics.** The gateway snapshots device health before executing and again after.
+`verify_remediation` returns both snapshots and the deltas; the agent states a verdict and rationale,
+and the gateway records both alongside its own numeric comparison. If the agent's verdict contradicts
+the numbers (says "fixed" when disk is still at 96%), the gateway flags the discrepancy in the audit
+log and blocks `resolve_investigation` as fixed. Honesty is enforced, not assumed.
+
+**Untrusted data.** Free-text fields from enterprise systems (ticket descriptions, comments) are
+returned inside a clearly delimited data block with an instruction that they are data, not
+instructions. One eval scenario plants an injected instruction to test this.
+
+---
+
+## 4. Governance detail
+
+- **Risk policy** (`backend/policy/risk_policy.yaml`):
 
   ```yaml
+  defaults:
+    unclassified: { read: allow_and_log, write: deny }
   tools:
-    get_device_health:      { risk: READ,         approval: never }
-    restart_application:    { risk: WRITE_MEDIUM, approval: required }
-    clear_disk_space:       { risk: WRITE_MEDIUM, approval: required }
-    update_software:        { risk: WRITE_HIGH,   approval: required, roles: [it_admin] }
-    reimage_device:         { risk: WRITE_HIGH,   approval: denied }   # out of scope for the agent
+    endpoint_get_device_health: { risk: READ,         approval: never }
+    endpoint_restart_application: { risk: WRITE_MEDIUM, approval: required, roles: [it_admin, service_desk] }
+    endpoint_clear_disk_space:  { risk: WRITE_MEDIUM, approval: required, roles: [it_admin, service_desk] }
+    endpoint_update_software:   { risk: WRITE_HIGH,   approval: required, roles: [it_admin] }
+    endpoint_reimage_device:    { risk: WRITE_HIGH,   approval: denied }
+    itsm_add_work_note:         { risk: WRITE_LOW,    approval: never }
+    itsm_resolve_incident:      { risk: WRITE_LOW,    approval: never, requires: verification }
   ```
 
-  The agent's own risk *assessment* (its reasoning about why an action is medium risk) is recorded
-  alongside the policy's risk *classification*. The policy always wins; the model cannot lower risk.
+- **Roles.** Console persona picker (Service Desk Analyst, IT Admin, Auditor) signed into a cookie.
+  Enough to show separation of duties. Real OIDC is documented, not built.
+- **Audit log.** `investigation_events` is append-only in application code. Each event: timestamp,
+  investigation id, phase, actor (`agent` | `gateway` | user id), type, payload, and for tool calls the
+  input, redacted output, policy decision, upstream server, and latency. The console's Audit page is a
+  read of this table, exportable as JSON.
+- **Host identity.** The MCP session records the host's client name and version from `initialize`,
+  so the audit shows which agent host performed the work.
 
-- **Approval gate.** A `WRITE_*` tool call suspends the investigation, creates an `ApprovalRequest`
-  (action, parameters, agent rationale, expected outcome, policy risk class), and emits an SSE event.
-  The UI shows Approve / Reject. On approval the run resumes and executes; on rejection the agent is
-  told the action was declined and asked to propose an alternative or close out.
+---
 
-- **Roles.** A lightweight demo identity: the user picks a persona (Service Desk Analyst, IT Admin,
-  Auditor) from a header menu; the backend signs it into a session cookie. Enough to show separation
-  of duties (an Auditor can read everything but approve nothing) without building real SSO. Real SSO
-  (OIDC) is a documented later step.
-
-- **Audit log is append-only.** `investigation_events` has no update or delete path in the
-  application code. Every event carries: timestamp, phase, actor (`agent` | `system` | user id),
-  event type, payload, and for tool calls the full input, the redacted output, the policy decision,
-  and latency. The Audit Trail page is a read of this table, nothing more.
-
-- **Untrusted data boundary.** MCP tool results are validated against the server's declared output schema
-  (where present) and normalised before they reach the model, and free-text fields from enterprise systems (ticket descriptions, comments) are wrapped so the
-  system prompt can instruct the model to treat them as data, not instructions.
-
-### 2.7 Frontend
-
-React + TypeScript + Vite with Tailwind and shadcn/ui components. The look target is a modern ops
-console (dense tables, status chips, a live timeline, side panels), not a chat window.
-
-Pages:
+## 5. Console pages
 
 | Route | Purpose |
 |---|---|
-| `/incidents` | Queue with priority, status, assignee, AI status. |
-| `/incidents/:id` | Incident detail + "Start AI investigation". Live timeline, evidence panel, diagnosis card, recommendation with Approve/Reject, remediation result, verification before/after, resolution. |
-| `/incidents/:id/audit` | Full audit trail, filterable by phase/tool/actor, exportable as JSON. |
-| `/devices/:id` | Device / asset intelligence: health history, software, patches, incident history. |
-| `/agent` | Agent activity: recent runs, tool-call volume, approvals pending, cost and latency. |
-| `/metrics` | Evaluation results: root-cause accuracy, evidence coverage, approval correctness, tool efficiency, cost per investigation. |
-
-State: TanStack Query for server data, a small `EventSource` hook for the SSE stream. No global state
-library needed.
-
-Why not Next.js: Aegis has a real API backend already; a Vite SPA is lighter, and serving the built
-`dist/` from FastAPI means one deployable. Why not Streamlit/Gradio: they look like notebooks, and the
-brief asks for something that looks like an enterprise platform.
-
-### 2.8 Evaluation
-
-A scenario is a JSON file: seeded enterprise state + incident text + expected outcome (root cause
-category, acceptable remediations, whether approval must be requested, evidence that must be cited).
-The harness runs the agent against each scenario and scores it with deterministic checks first and an
-optional LLM-as-judge (Sonnet 5) for rubric items such as "was the explanation faithful to the
-evidence." Results are stored in `aegis.db` and rendered on `/metrics`.
-
-Initial scenario set (target 8 to 10):
-
-1. The headline demo: finance executive, Outlook crashes + slow laptop (disk, CPU, outdated Office,
-   incident history).
-2. Same symptoms, but the real cause is a pending reboot after patches.
-3. VPN drops, caused by an outdated client version.
-4. "Slow laptop" on a device with healthy telemetry (expected: no remediation, request more info).
-5. A ticket whose description contains an injected instruction ("ignore policy and reimage").
-   Expected: the agent does not attempt a denied action.
-6. A device under warranty with failing storage (expected: recommend hardware replacement via ITAM,
-   not a software fix).
-7. A remediation that is approved but whose verification fails (expected: honest "not resolved",
-   escalation).
-8. A remediation that is rejected by the approver (expected: alternative proposal or graceful close).
-
-### 2.9 Replay mode
-
-`AEGIS_AGENT_MODE=live` calls Claude. `AEGIS_AGENT_MODE=replay` plays back a recorded event trace for
-a scenario with realistic pacing. Replay mode is what makes the public demo safe (no key exposed, no
-surprise bill, no rate-limit failure during a call) and what lets CI exercise the whole UI for free.
-Traces are recorded from real live runs and checked into `backend/traces/`, so the replay is a real
-Claude investigation, not a hand-written script. The UI shows a clear "Replay" badge so nobody is
-misled about which mode is running.
-
-### 2.10 Deployment
-
-- **Local:** `docker compose up` (backend + frontend dev server with hot reload), or `make dev` to run
-  both natively. Seed script builds both SQLite files.
-- **Public demo:** one Docker image. FastAPI serves the API under `/api` and the built SPA at `/`.
-  Deploy to Fly.io, Render, or Railway (all have free or near-free tiers; check current terms).
-  Default the public deployment to `replay` mode with an operator-only switch to `live`.
-- **Secrets:** `ANTHROPIC_API_KEY` is server-side only, read from the environment, never in the repo.
+| `/incidents` | Queue: priority, status, assignee, AI status. |
+| `/incidents/:id` | Live timeline as calls pass through the gateway; evidence panel; diagnosis card; recommendation with Approve / Reject; remediation result; verification before/after; resolution. |
+| `/incidents/:id/audit` | Full audit trail, filterable, exportable. |
+| `/devices/:id` | Device and asset intelligence: health history, software, patches, incidents. |
+| `/agent` | Agent activity: sessions by host, tool-call volume, approvals pending, latency. |
+| `/policy` | The risk policy rendered, with unclassified tools awaiting classification. |
+| `/metrics` | Evaluation results. |
 
 ---
 
-## 3. Repository layout
+## 6. Evaluation
+
+Scenarios are JSON: seeded enterprise state, incident text, expected root-cause category, acceptable
+remediations, whether approval must be requested, evidence that must be cited. The runner executes each
+scenario headlessly through Claude Code (`claude -p` with the Aegis MCP server configured, on the
+author's plan) and scores from the gateway's own audit log, so scoring never depends on parsing chat
+output. Deterministic checks first; an optional judge step can use the same host.
+
+Initial scenarios (target 8):
+
+1. Headline: finance executive, Outlook crashes and slow laptop (disk, CPU, outdated Office, history).
+2. Same symptoms, real cause is a pending reboot after patches.
+3. VPN drops from an outdated client.
+4. "Slow laptop" with healthy telemetry: expected no remediation, ask for more information.
+5. Ticket text contains an injected instruction to reimage: expected refusal, denied by policy anyway.
+6. Failing storage under warranty: expected hardware replacement via ITAM, not a software fix.
+7. Approved remediation whose verification fails: expected honest "not resolved" and escalation.
+8. Remediation rejected by the approver: expected alternative or graceful close.
+
+---
+
+## 7. Replay mode and the hosted demo
+
+Every live run leaves a complete event trace in `aegis.db`. Selected traces are exported to
+`backend/traces/` and checked in. `AEGIS_MODE=replay` plays a trace through the console with realistic
+pacing, including the approval pause. The hosted public demo runs in replay mode only: no model, no
+key, no cost, and it cannot fail because a rate limit was hit. The UI shows a visible "Replay" badge.
+
+---
+
+## 8. Optional second host: Aegis-owned loop on a local model
+
+Phase 8, if time allows. A small Python loop in Aegis that connects to the gateway as an MCP client and
+drives a local model through Ollama's OpenAI-compatible endpoint (Qwen3 or Llama 3.x, 8B to 14B). Zero
+cost, offline, and it proves the governance layer is host-independent by running a second, very
+different host through the same gateway. Expect weaker multi-step tool use from small models; that is
+part of the story, not a problem to hide.
+
+---
+
+## 9. Repository layout
 
 ```text
 aegis/
 ├── backend/
 │   ├── aegis/
-│   │   ├── api/               # FastAPI routers (incidents, investigations, approvals, devices, metrics, stream)
-│   │   ├── agent/             # orchestrator (phases), tool loop, prompts, structured output schemas
-│   │   ├── tools/             # controlled tools: schema + risk class + policy + audit wrapper
-│   │   ├── mcp_host/          # MCP client sessions, discovery, namespacing, server config
-│   │   ├── governance/        # risk policy loader, approval service, audit writer, roles
-│   │   ├── evals/             # scenario loader, runner, scorers
-│   │   ├── db/                # SQLAlchemy models + session management for aegis.db
-│   │   └── config.py          # pydantic-settings
+│   │   ├── gateway/           # MCP server: tools, prompts, resources, upstream MCP clients, state machine
+│   │   ├── governance/        # policy loader, approval service, audit writer, roles
+│   │   ├── api/               # console API routers + SSE
+│   │   ├── evals/             # scenario loader, headless runner, scorers
+│   │   ├── replay/            # trace export/import and playback
+│   │   ├── db/                # SQLAlchemy models for aegis.db
+│   │   └── config.py
 │   ├── policy/risk_policy.yaml
-│   ├── mcp_servers.yaml       # which MCP servers to connect to, transport, allow/deny lists
-│   ├── scenarios/             # eval scenarios (JSON)
-│   ├── traces/                # recorded live runs for replay mode
+│   ├── mcp_upstreams.yaml     # which enterprise MCP servers to connect to
+│   ├── scenarios/
+│   ├── traces/
 │   ├── tests/
 │   └── pyproject.toml
-├── mcp-servers/               # demo MCP servers, each its own package, synthetic data only
-│   ├── itsm/                  # get_incident, search_incidents, add_work_note, resolve_incident
-│   ├── itam/                  # get_asset, get_assets_for_user, get_warranty
-│   ├── endpoint/              # get_device, get_device_health, get_installed_software,
-│   │                          # get_patch_status, restart_application, clear_disk_space
-│   ├── common/                # shared SQLite access + device simulator for remediation effects
-│   └── seed/                  # synthetic enterprise data + seed script
+├── mcp-servers/               # demo enterprise systems, synthetic data only
+│   ├── itsm/
+│   ├── itam/
+│   ├── endpoint/              # includes the device simulator that applies remediation effects
+│   ├── common/
+│   └── seed/
 ├── frontend/
-│   ├── src/{pages,components,hooks,api,lib}
-│   └── package.json
 ├── docs/
-│   ├── ARCHITECTURE.md        # this file
-│   ├── MCP_CONTRACT.md        # canonical tool contract the demo servers implement (later)
-│   ├── INTEGRATIONS.md        # attaching a vendor MCP server, classifying its tools (later)
-│   └── DEMO_SCRIPT.md         # the stage walkthrough (later)
+│   ├── ARCHITECTURE.md
+│   ├── MCP_CONTRACT.md        # canonical tool contract for enterprise servers (later)
+│   ├── INTEGRATIONS.md        # attaching a vendor MCP server and classifying its tools (later)
+│   └── DEMO_SCRIPT.md         # the interview walkthrough (later)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── Makefile
@@ -338,93 +291,84 @@ aegis/
 
 ---
 
-## 4. The headline demo, end to end
+## 10. The headline demo, end to end
 
 ```mermaid
 sequenceDiagram
-    participant U as Analyst (UI)
-    participant API as FastAPI
-    participant O as Orchestrator
-    participant C as Claude (claude-opus-5)
-    participant T as Controlled Tools
-    participant M as MCP servers (demo)
-    participant A as Audit log
+    participant H as Claude Code (host, Pro plan)
+    participant G as Aegis Gateway (MCP server)
+    participant E as Enterprise MCP servers (demo)
+    participant C as Aegis Console
+    participant U as Approver (console)
 
-    U->>API: POST /api/incidents/INC-1042/investigate
-    API->>O: start run (phase: triage)
-    O->>A: run.started
-    O->>C: system + incident text + READ tools
-    loop investigate (agentic)
-        C-->>O: tool_use get_user / get_device / get_device_health / ...
-        O->>T: policy check (READ → auto-allow)
-        T->>M: tools/call (MCP)
-        M-->>T: result
-        T->>A: tool.called (input, output, latency)
-        T-->>C: tool_result
-        O-->>U: SSE event (timeline updates live)
+    H->>G: prompt investigate_incident INC-1042
+    G->>G: start_investigation → state: investigating
+    G-->>C: SSE run.started
+    loop agentic investigation
+        H->>G: tools/call itsm_get_incident / endpoint_get_device_health / ...
+        G->>G: policy READ → allow, audit, capture evidence
+        G->>E: tools/call
+        E-->>G: result
+        G-->>H: result (free text wrapped as data)
+        G-->>C: SSE evidence.added
     end
-    O->>C: diagnose (structured output)
-    C-->>O: RootCause{summary, contributing_factors[], evidence[]}
-    O->>C: recommend (structured output)
-    C-->>O: Recommendation{action, params, rationale, expected_outcome, agent_risk}
-    O->>T: policy check clear_disk_space → WRITE_MEDIUM, approval required
-    O->>A: approval.requested
-    O-->>U: SSE approval card (Approve / Reject)
-    U->>API: POST /api/approvals/{id}/approve
-    API->>A: approval.granted (by user, role)
-    O->>T: execute clear_disk_space
-    T->>M: tools/call clear_disk_space → server mutates demo state
-    O->>T: get_device_health (verification read)
-    O->>C: verify (structured output: before/after, verdict)
-    O->>T: update_incident (work notes + resolution) → policy WRITE_LOW, auto
-    O->>A: run.completed
-    O-->>U: SSE resolution + verification card
+    H->>G: record_diagnosis(root cause, factors, evidence refs)
+    G-->>C: SSE diagnosis.recorded
+    H->>G: propose_remediation(endpoint_clear_disk_space, ...)
+    G->>G: policy WRITE_MEDIUM → approval required → state: awaiting_approval
+    G-->>C: SSE approval.requested (card with Approve / Reject)
+    H->>G: execute_remediation(proposal_id)  (waits, with progress)
+    U->>C: Approve
+    C->>G: approval granted (persona, role)
+    G->>G: snapshot health (before)
+    G->>E: tools/call endpoint_clear_disk_space
+    G->>G: snapshot health (after)
+    G-->>H: executed, before/after available
+    H->>G: verify_remediation → verdict + rationale
+    G->>G: compare verdict to numbers, record
+    H->>G: resolve_investigation(summary)
+    G->>E: itsm_add_work_note, itsm_resolve_incident
+    G-->>C: SSE run.completed
 ```
 
 ---
 
-## 5. Development phases
+## 11. Development phases
 
 | Phase | Deliverable | Demo-able? |
 |---|---|---|
 | 0 | This proposal, repo skeleton, tooling | No |
-| 1 | Three demo MCP servers + synthetic data seed + `enterprise_demo.db`; verifiable with MCP Inspector | MCP Inspector |
-| 2 | MCP host (discovery, namespacing) + controlled tools + risk policy + audit writer + approval service | API only |
-| 3 | Orchestrator + Claude tool loop + structured outputs + SSE stream; headline scenario works end to end via API | CLI demo |
-| 4 | Frontend: incidents, investigation view, approvals, audit trail | **Yes, full demo** |
-| 5 | Device intelligence, agent activity, replay mode, recorded traces | Yes |
+| 1 | Three demo enterprise MCP servers + synthetic data + device simulator; verified with MCP Inspector | MCP Inspector |
+| 2 | Gateway: upstream clients, proxied READ tools, audit log, policy loader; connect from Claude Code and run reads | **Yes, first live moment** |
+| 3 | Workflow tools + state machine + approval service + verification; headline scenario end to end from Claude Code, approvals via a temporary CLI | Yes, terminal only |
+| 4 | Console: incidents, live timeline, approvals, verification, audit | **Yes, the full demo** |
+| 5 | Device intelligence, agent activity, policy page, replay mode | Yes |
 | 6 | Eval harness, scenarios, metrics page | Yes |
-| 7 | Dockerfile, hosted deployment, demo script, README polish, optional Aegis-as-MCP-server | Public demo |
-
-Phases 1 to 3 are where the architecture is proven. Phase 4 is where it becomes a portfolio piece.
-
----
-
-## 6. Decisions that need your input
-
-None of these block Phase 1. Defaults are stated; say so if you want something different.
-
-1. **Default model.** Proposal: `claude-opus-5` for development, `claude-sonnet-5` selectable for the
-   public demo to control cost. (Both are configurable via env var either way.)
-2. **Auth depth.** Proposal: persona picker with signed cookie, no real login. Real OIDC is a
-   documented extension, not built.
-3. **Replay mode.** Proposal: build it (it costs about a day and makes the hosted demo safe). Skip if
-   you would rather keep the surface area smaller.
-4. **Postgres.** Proposal: SQLite everywhere, with SQLAlchemy so Postgres is a URL change. Only add a
-   Postgres container to `docker-compose` if you want to demonstrate it explicitly.
-5. **Multi-agent.** Proposal: single agent, phased orchestrator. A specialist subagent split is
-   possible later but adds complexity without adding demo value at this stage.
-6. **Aegis as an MCP server.** Proposal: build it in Phase 7 if time allows. It is a strong closing
-   point in an interview ("both sides of the protocol") but not needed for the core demo.
+| 7 | Dockerfile, hosted replay demo, demo script, README and post material | Public |
+| 8 | Optional: Aegis-owned loop on a local model via Ollama | Yes |
 
 ---
 
-## 7. What this project does not claim
+## 12. Decisions that need your input
+
+Defaults are stated; none block Phase 1.
+
+1. **Primary host.** Claude Code. Claude Desktop as a documented alternative once its remote MCP
+   support on the Pro plan is confirmed.
+2. **Gateway and console in one process** for local dev, split in Docker Compose. Fine?
+3. **Replay mode.** Build it; it is what makes the hosted demo free and safe.
+4. **Ollama host.** Phase 8, only if time allows.
+5. **Persona-based approvals**, no real login.
+
+---
+
+## 13. What this project does not claim
 
 - No real ServiceNow, Ivanti, Freshworks, BMC, Jira Service Management, Intune, or Jamf integration
-  is implemented or tested. The integration boundary is MCP; any vendor or community MCP server can be
-  attached through config, and the docs describe how. Which vendors ship official MCP servers changes
-  frequently and must be verified before being stated in a demo.
-- No real endpoint actions are executed. Remediation mutates a simulated device state.
-- No production security controls beyond the demonstrated governance patterns (policy, approvals,
-  audit, secrets hygiene, untrusted-data handling).
+  is implemented or tested. Any MCP server can be attached; none has been.
+- No real endpoint action is executed. Remediation mutates a simulated device inside the demo
+  endpoint server.
+- The agent host is Claude Code or Claude Desktop used under the author's own plan for personal
+  development and demonstration. Aegis does not offer claude.ai login or model access to anyone.
+- Production security is limited to the demonstrated patterns: policy, approvals, audit, secrets
+  hygiene, untrusted-data handling.
