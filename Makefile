@@ -6,7 +6,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install seed demo-systems gateway stack stop test test-demo test-gateway \
-        lint fmt clean pending audit investigations inspector
+        lint fmt clean pending audit investigations inspector investigate check-providers approve reject
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -62,6 +62,12 @@ investigations:  ## List recent investigations
 
 audit:  ## Print the audit trail
 	@cd backend && .venv/bin/python -m aegis.cli audit
+
+investigate:  ## Run an investigation with the built-in engine: make investigate INC=INC-1042
+	@cd backend && .venv/bin/python -m aegis.engine.run $(or $(INC),INC-1042) $(if $(PROVIDER),--provider $(PROVIDER),)
+
+check-providers:  ## Verify the LLM providers against their live APIs (needs keys)
+	@cd backend && .venv/bin/python -m aegis.engine.check $(if $(PROVIDER),--provider $(PROVIDER),)
 
 test: test-demo test-gateway  ## Run every test
 

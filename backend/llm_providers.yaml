@@ -1,0 +1,36 @@
+# Which model the built-in engine runs on.
+#
+# The chain exists because free tiers rate-limit. The primary is tried, then
+# each fallback in order, and the reason for each switch is recorded against the
+# investigation. Moving to a paid provider later is an edit here, not a code
+# change.
+#
+# Model ids and free-tier limits change. Verify both before a demo:
+#   Gemini  https://ai.google.dev/gemini-api/docs/models
+#   Groq    https://console.groq.com/docs/models
+
+llm:
+  primary: gemini
+  fallbacks: [groq]
+  on_exhausted: replay        # last resort, so a public demo never shows an error page
+
+  providers:
+    gemini:
+      kind: gemini
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+      timeout_seconds: 90
+
+    groq:
+      kind: openai_compatible
+      base_url: https://api.groq.com/openai/v1
+      model: llama-3.3-70b-versatile
+      api_key_env: GROQ_API_KEY
+      timeout_seconds: 90
+
+    # A local model needs no key and no network. Enable for an offline demo.
+    ollama:
+      kind: openai_compatible
+      base_url: http://127.0.0.1:11434/v1
+      model: qwen2.5:14b
+      enabled: false

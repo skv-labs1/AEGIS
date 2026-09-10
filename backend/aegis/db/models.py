@@ -55,6 +55,9 @@ class EventType(str, enum.Enum):
     POLICY_REFUSED = "policy.refused"
     APPROVAL_REQUIRED = "approval.required"
     EVIDENCE_CAPTURED = "evidence.captured"
+    MODEL_CALLED = "model.called"
+    MODEL_FAILED = "model.failed"
+    RUN_COMPLETED = "run.completed"
     UPSTREAM_UNAVAILABLE = "upstream.unavailable"
 
 
