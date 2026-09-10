@@ -47,8 +47,15 @@ export function IncidentDetail({
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [mode, setMode] = useState<string | null>(null);
   const investigationId = investigation?.investigation_id ?? incident?.investigation?.investigation_id ?? null;
   const lastRun = status?.last_runs?.[number.toUpperCase()];
+  const trace = status?.replay?.traces?.[number.toUpperCase()];
+  const canReplay = Boolean(trace);
+  const traceNote = trace
+    ? `${trace.turns} turns, ${trace.origin === "recorded" ? `recorded from ${trace.provider}/${trace.model}` : "authored by hand, not a recording"}`
+    : "";
+  const replaying = mode === "replay" || lastRun?.replayed;
 
   const load = useCallback(async () => {
     try {
@@ -101,12 +108,14 @@ export function IncidentDetail({
     return () => clearInterval(timer);
   }, [investigationId]);
 
-  async function startInvestigation() {
+  async function startInvestigation(mode: "auto" | "live" | "replay" = "auto") {
     setStarting(true);
     setError(null);
+    setMode(null);
     try {
-      const result = await api.investigate(number);
+      const result = await api.investigate(number, mode);
       if (!result.started) setError(result.reason ?? "Could not start.");
+      else setMode(result.mode ?? null);
       setTimeout(load, 1200);
     } catch (exc) {
       setError(String(exc));
@@ -141,19 +150,51 @@ export function IncidentDetail({
           </p>
         </div>
         {!investigationId && detail.state !== "resolved" && (
-          <Button variant="primary" onClick={startInvestigation} disabled={starting || !status?.engine.available}>
-            {starting ? "Starting" : "Start AI investigation"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {canReplay && !status?.engine.available && (
+              <Chip tone="bg-violet-500/15 text-violet-500 ring-violet-500/30" title={traceNote}>
+                replay available
+              </Chip>
+            )}
+            <Button
+              variant="primary"
+              onClick={() => startInvestigation("auto")}
+              disabled={starting || (!status?.engine.available && !canReplay)}
+              title={
+                status?.engine.available
+                  ? "Runs on the configured model provider"
+                  : canReplay
+                    ? "No model provider configured, so this replays a stored trace. The gateway, approvals and verification still run for real."
+                    : undefined
+              }
+            >
+              {starting ? "Starting" : status?.engine.available ? "Start AI investigation" : "Replay investigation"}
+            </Button>
+          </div>
         )}
       </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {!status?.engine.available && !investigationId && (
         <div className="rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-xs text-ink-300">
-          {status?.engine.reason ??
-            "The built-in engine has no model provider available."}{" "}
-          The live view below tails the audit trail either way, so a run driven from Claude Code
-          appears here as it happens.
+          {status?.engine.reason ?? "The built-in engine has no model provider available."}
+          {canReplay && (
+            <>
+              {" "}
+              A stored trace exists for this incident, so pressing the button replays the agent's
+              decisions ({traceNote}). Everything else runs for real: the same policy checks, the
+              same approval gate, and verification measured against the device.
+            </>
+          )}{" "}
+          The live view tails the audit trail either way, so a run driven from Claude Code appears
+          here as it happens.
+        </div>
+      )}
+      {replaying && (
+        <div className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs text-violet-500">
+          Replay: the agent's decisions come from a stored trace
+          {trace?.origin === "authored" ? ", authored by hand rather than recorded from a model" : ""}.
+          The gateway, policy, approval and verification are running for real.
         </div>
       )}
       {lastRun && lastRun.finished !== "completed" && (

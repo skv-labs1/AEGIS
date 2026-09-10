@@ -6,6 +6,8 @@ path a browser actually takes.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -13,8 +15,46 @@ from aegis.db.models import AuditEvent, Proposal
 from aegis.db.session import session_scope
 
 
+class _LifespanRunner:
+    """Runs an app's lifespan inside one task.
+
+    The MCP transport mounted in the app opens anyio cancel scopes, and those
+    must be entered and exited in the same task. A pytest async-generator
+    fixture does not guarantee that, so the lifespan gets its own task here.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+        self._ready = asyncio.Event()
+        self._stop = asyncio.Event()
+        self._task: asyncio.Task | None = None
+        self._error: BaseException | None = None
+
+    async def __aenter__(self):
+        self._task = asyncio.create_task(self._run())
+        await self._ready.wait()
+        if self._error is not None:
+            raise self._error
+        return self.app
+
+    async def _run(self) -> None:
+        try:
+            async with self.app.router.lifespan_context(self.app):
+                self._ready.set()
+                await self._stop.wait()
+        except BaseException as exc:  # noqa: BLE001 - reported to the caller
+            self._error = exc
+        finally:
+            self._ready.set()
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        self._stop.set()
+        if self._task is not None:
+            await self._task
+
+
 @pytest.fixture()
-async def client(settings, fresh_enterprise_state, monkeypatch, tmp_path):
+async def client(settings, fresh_enterprise_state, monkeypatch):
     """The FastAPI app, wired to the throwaway database and demo systems."""
     monkeypatch.setenv("AEGIS_DATABASE_URL", settings.database_url)
     monkeypatch.setenv("AEGIS_UPSTREAMS_FILE", str(settings.upstreams_file))
@@ -23,8 +63,8 @@ async def client(settings, fresh_enterprise_state, monkeypatch, tmp_path):
     from aegis.api import app as app_module
 
     application = app_module.create_app()
-    transport = httpx.ASGITransport(app=application)
-    async with application.router.lifespan_context(application):
+    async with _LifespanRunner(application):
+        transport = httpx.ASGITransport(app=application)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             yield http
 
@@ -80,10 +120,34 @@ async def test_creating_an_incident_goes_through_the_gateway(client):
     assert (await client.get(f"/api/incidents/{number}")).json()["found"] is True
 
 
-async def test_starting_a_run_without_a_provider_explains_itself(client):
-    response = await client.post("/api/incidents/INC-1042/investigate")
+async def test_auto_mode_falls_back_to_replay_when_no_model_is_available(client):
+    """This is what lets the demo run with no API key."""
+    response = await client.post("/api/incidents/INC-1042/investigate?mode=auto")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["started"] is True
+    assert payload["mode"] == "replay"
+    assert payload["trace_origin"] == "authored"
+
+
+async def test_a_live_run_is_refused_rather_than_quietly_replayed(client):
+    """Asking for live must not silently give you a recording instead."""
+    response = await client.post("/api/incidents/INC-1042/investigate?mode=live")
     assert response.status_code == 503
     assert "API key" in response.json()["detail"]
+
+
+async def test_an_incident_with_no_trace_and_no_model_says_so(client):
+    response = await client.post("/api/incidents/INC-1039/investigate?mode=auto")
+    assert response.status_code == 503
+    assert "no stored trace" in response.json()["detail"]
+
+
+async def test_replay_availability_is_reported_honestly(client):
+    payload = (await client.get("/api/status")).json()
+    trace = payload["replay"]["traces"]["INC-1042"]
+    assert trace["origin"] == "authored"
+    assert "NOT RECORDED" in trace["notes"]
 
 
 async def test_device_page_gathers_every_system(client):

@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "incident_number": "INC-1042",
+  "origin": "authored",
+  "provider": "none",
+  "model": "authored-trace",
+  "recorded_at": "",
+  "notes": "AUTHORED, NOT RECORDED. Written by hand so the demo runs with no API key. It is the sequence a competent model produces on this incident, but no model produced it. Replace it with a real recording once a provider key is available: python -m aegis.replay.record INC-1042. Only the model's choices are replayed; the gateway, policy, approval gate, remediation and verification all run for real, so a replayed run still blocks for a human approval and still changes device state.",
+  "turns": [
+    {
+      "text": null,
+      "latency_ms": 1200,
+      "tool_calls": [{ "name": "start_investigation", "arguments": { "incident_number": "INC-1042" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 1400,
+      "tool_calls": [{ "name": "itam_get_assets_for_user", "arguments": { "user_id": "USR-1001" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 1100,
+      "tool_calls": [{ "name": "endpoint_get_device_health", "arguments": { "device_id": "$device_id" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 1000,
+      "tool_calls": [{ "name": "endpoint_get_patch_status", "arguments": { "device_id": "$device_id" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 1300,
+      "tool_calls": [{ "name": "endpoint_get_installed_software", "arguments": { "device_id": "$device_id" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 1200,
+      "tool_calls": [
+        {
+          "name": "itsm_search_incidents",
+          "arguments": { "caller_id": "USR-1001", "text": "outlook", "exclude_number": "INC-1042" }
+        }
+      ]
+    },
+    {
+      "text": null,
+      "latency_ms": 900,
+      "tool_calls": [{ "name": "endpoint_get_health_history", "arguments": { "device_id": "$device_id" } }]
+    },
+    {
+      "text": null,
+      "latency_ms": 2400,
+      "tool_calls": [
+        {
+          "name": "record_diagnosis",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "root_cause": "The device is out of disk space, and most of what is consuming it belongs to Outlook itself: 62 GB of orphaned OST and PST files from decommissioned mailboxes, last touched over a year ago. With no headroom, Outlook cannot grow its local data file, which is what terminates it mid-send.",
+            "contributing_factors": [
+              "Microsoft 365 Apps is 1198 days behind and the installed build carries KB5002641, a documented defect where Outlook crashes when its data file exceeds available disk space. The symptom matches exactly.",
+              "Two critical Windows updates have failed to download, both with 0x80070070 - insufficient disk space. Patch non-compliance here is a symptom of the same cause, not a separate fault.",
+              "Health has fallen 42 points over 14 days while disk climbed 21 points, so this is gradual exhaustion rather than a sudden failure.",
+              "Four earlier Outlook incidents from this caller were each closed as a workaround. The symptom was cleared every time and the cause never was."
+            ],
+            "evidence_cited": [
+              "endpoint_get_device_health: 97% disk, health 31.7 (critical), 128 GB reclaimable",
+              "endpoint_get_patch_status: both critical patches failing with 0x80070070 insufficient disk space",
+              "endpoint_get_installed_software: Microsoft 365 Apps 16.0.14332 with known issue KB5002641",
+              "itsm_search_incidents: INC-1007, INC-0954, INC-0903, INC-0871 all resolved as workarounds",
+              "endpoint_get_health_history: 14 day decline, disk rising steadily"
+            ],
+            "confidence": "high"
+          }
+        }
+      ]
+    },
+    {
+      "text": null,
+      "latency_ms": 1800,
+      "tool_calls": [
+        {
+          "name": "propose_remediation",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "action": "endpoint_clear_disk_space",
+            "arguments": { "device_id": "$device_id" },
+            "rationale": "Reclaim the 128 GB of recoverable space, of which 62 GB is orphaned Outlook data from mailboxes that no longer exist. This addresses the cause rather than the symptom, and should also let the two failed critical patches download.",
+            "expected_outcome": "Disk utilisation falls from 97% to roughly 72%, paging and indexing pressure eases, and patching can proceed. Outlook stability should improve, though the outdated Office build remains a separate risk.",
+            "agent_risk_assessment": "medium",
+            "agent_risk_rationale": "Deletes files from a VIP user's device during quarter-end reporting. The categories are recoverable caches and orphaned data, but the user did not ask for anything to be deleted."
+          }
+        }
+      ]
+    },
+    {
+      "text": null,
+      "latency_ms": 1000,
+      "tool_calls": [
+        {
+          "name": "execute_remediation",
+          "arguments": { "investigation_id": "$investigation_id", "proposal_id": "$proposal_id" }
+        }
+      ]
+    },
+    {
+      "text": null,
+      "latency_ms": 1600,
+      "tool_calls": [
+        {
+          "name": "verify_remediation",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "proposal_id": "$proposal_id",
+            "verdict": "partially_resolved",
+            "rationale": "Disk fell from 97% to 72%, health rose from 31.7 to 68.3, and CPU dropped from 88% to 50% as paging pressure eased. The immediate cause is cleared. It is only partially resolved because the outdated Office build with the documented Outlook defect is still installed, and the two critical patches still need to be retried and a reboot taken."
+          }
+        }
+      ]
+    },
+    {
+      "text": null,
+      "latency_ms": 1400,
+      "tool_calls": [
+        {
+          "name": "resolve_investigation",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "resolution_code": "Solved (Workaround)",
+            "summary": "Root cause: disk exhaustion on the device, driven by 62 GB of orphaned Outlook data files from decommissioned mailboxes. With no headroom, Outlook could not extend its local data file and terminated mid-send, and the same lack of space was failing two critical Windows updates. Reclaimed 128 GB; disk fell 97% to 72%, health 31.7 to 68.3, CPU 88% to 50%. Closing as a workaround rather than a permanent fix: Microsoft 365 Apps is still on build 16.0.14332, which carries KB5002641, the documented defect matching this exact symptom. Recommend an Office update under change control, then retry the two failed patches and reboot. Note for the service desk: four earlier incidents from this caller were closed as workarounds without addressing this cause."
+          }
+        }
+      ]
+    },
+    {
+      "text": "INC-1042 is resolved as a workaround. The root cause was disk exhaustion caused by 62 GB of orphaned Outlook data files, which both crashed Outlook and blocked two critical patches. Reclaiming 128 GB took the device from critical (31.7) to degraded (68.3) and disk from 97% to 72%. I did not close it as permanently solved: the installed Office build still carries the defect that matches this symptom, so an Office update and a patch retry are still needed. Worth flagging that four earlier incidents from this user were closed as workarounds without anyone reaching this cause.",
+      "latency_ms": 1800,
+      "tool_calls": []
+    }
+  ]
+}

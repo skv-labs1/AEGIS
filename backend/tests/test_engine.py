@@ -333,9 +333,8 @@ def test_openai_adapter_translates_a_tool_exchange():
 
 
 def test_gemini_adapter_translates_a_tool_exchange():
-    from aegis.engine.providers.gemini import GeminiProvider
-
     from aegis.engine.providers.base import ToolCall
+    from aegis.engine.providers.gemini import GeminiProvider
 
     system, contents = GeminiProvider._contents(
         [

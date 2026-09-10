@@ -33,6 +33,8 @@ from ..engine.loop import AgentEngine
 from ..engine.providers.registry import ProviderChain, load_chain
 from ..gateway.server import AegisGateway
 from ..governance.approvals import DatabaseApprovalService, decide
+from ..replay.provider import ReplayProvider
+from ..replay.trace import Trace, available_traces
 from ..workflow.manual import ManualActionService
 from ..workflow.service import WorkflowError
 
@@ -50,10 +52,12 @@ class Console:
     chain: ProviderChain | None
     runs: dict[str, asyncio.Task[Any]]
     last_runs: dict[str, dict[str, Any]]
+    traces: dict[str, Trace]
 
     def __init__(self) -> None:
         self.runs = {}
         self.last_runs = {}
+        self.traces = {}
         self.chain = None
 
 
@@ -123,6 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001 - the console works without an engine
         logger.warning("No usable LLM provider chain: %s", exc)
         console.chain = None
+    console.traces = available_traces()
+    if console.traces:
+        logger.info("Replay traces available for %s", ", ".join(sorted(console.traces)))
 
     # The MCP transport owns a task group that must be entered here. Mounting the
     # sub-app is not enough on its own: without this, every request to /mcp fails
@@ -161,6 +168,7 @@ def create_app() -> FastAPI:
     )
     async def mcp_without_trailing_slash(request: Request) -> RedirectResponse:
         return RedirectResponse("/mcp/", status_code=307)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -218,10 +226,25 @@ def _register(app: FastAPI) -> None:
                     None
                     if console.chain and console.chain.usable
                     else "No model provider has its API key set. Set GEMINI_API_KEY or "
-                    "GROQ_API_KEY, or drive the gateway from an MCP host such as Claude Code."
+                    "GROQ_API_KEY, drive the gateway from an MCP host such as Claude Code, "
+                    "or use replay."
                 ),
             },
-            "last_runs": {k: v for k, v in console.last_runs.items()},
+            "last_runs": dict(console.last_runs),
+            "replay": {
+                "available_for": sorted(console.traces),
+                "traces": {
+                    number: {
+                        "origin": trace.origin,
+                        "provider": trace.provider,
+                        "model": trace.model,
+                        "turns": len(trace.turns),
+                        "recorded_at": trace.recorded_at,
+                        "notes": trace.notes,
+                    }
+                    for number, trace in console.traces.items()
+                },
+            },
         }
 
     @app.get("/api/policy")
@@ -303,44 +326,82 @@ def _register(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail=created.get("error", "Not created"))
         number = created["incident"]["number"]
         if body.investigate_automatically:
-            created["run"] = _start_run(number)
+            try:
+                created["run"] = _start_run(number)
+            except HTTPException as exc:
+                created["run"] = {"started": False, "reason": exc.detail}
         return created
 
     @app.post("/api/incidents/{number}/investigate")
-    async def investigate(number: str) -> dict[str, Any]:
-        return _start_run(number)
+    async def investigate(number: str, mode: str = "auto") -> dict[str, Any]:
+        """Start an investigation.
 
-    def _start_run(number: str) -> dict[str, Any]:
-        if console.chain is None or not console.chain.usable:
+        `mode` is auto, live or replay. Auto prefers a live model and falls back
+        to a stored trace, which is what lets the demo run with no API key.
+        """
+        return _start_run(number, mode)
+
+    def _start_run(number: str, mode: str = "auto") -> dict[str, Any]:
+        incident = number.upper()
+        if mode not in {"auto", "live", "replay"}:
+            raise HTTPException(status_code=400, detail="mode must be auto, live or replay")
+
+        live_possible = bool(console.chain and console.chain.usable)
+        trace = console.traces.get(incident)
+
+        if mode == "live" and not live_possible:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "No model provider has its API key set, so the built-in engine cannot "
-                    "run. Set GEMINI_API_KEY or GROQ_API_KEY, or drive the gateway from an "
-                    "MCP host such as Claude Code and watch it here."
+                    "No model provider has its API key set, so a live run is not possible. "
+                    "Set GEMINI_API_KEY or GROQ_API_KEY, or use replay."
                 ),
             )
-        existing = console.runs.get(number.upper())
+        if mode == "replay" and trace is None:
+            raise HTTPException(status_code=404, detail=f"No stored trace for {incident}.")
+
+        replaying = mode == "replay" or (mode == "auto" and not live_possible)
+        if replaying and trace is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "No model provider has its API key set and there is no stored trace for "
+                    f"{incident}. Set GEMINI_API_KEY or GROQ_API_KEY, or drive the gateway "
+                    "from an MCP host such as Claude Code and watch it here."
+                ),
+            )
+
+        existing = console.runs.get(incident)
         if existing and not existing.done():
             return {"started": False, "reason": "An investigation is already running."}
+
+        # Replay swaps out the model and nothing else. The gateway, policy,
+        # approval gate, remediation and verification all still run for real.
+        chain = ProviderChain(providers=[ReplayProvider(trace)]) if replaying else console.chain
 
         async def run() -> Any:
             """A background run must not fail silently; the console shows the outcome."""
             try:
-                engine = AgentEngine(console.gateway.server, console.chain)
-                result = await engine.run(number.upper())
-                console.last_runs[number.upper()] = result.as_dict()
+                engine = AgentEngine(console.gateway.server, chain)
+                result = await engine.run(incident)
+                console.last_runs[incident] = result.as_dict()
                 return result
             except Exception as exc:
-                logger.exception("Engine run for %s failed", number)
-                console.last_runs[number.upper()] = {
-                    "incident_number": number.upper(),
+                logger.exception("Engine run for %s failed", incident)
+                console.last_runs[incident] = {
+                    "incident_number": incident,
                     "finished": "error",
                     "error": f"{type(exc).__name__}: {exc}",
                 }
                 raise
 
-        console.runs[number.upper()] = asyncio.create_task(run())
+        console.runs[incident] = asyncio.create_task(run())
+        return {
+            "started": True,
+            "incident_number": incident,
+            "mode": "replay" if replaying else "live",
+            "trace_origin": trace.origin if replaying and trace else None,
+        }
         return {"started": True, "incident_number": number.upper()}
 
     # -- investigations -------------------------------------------------------

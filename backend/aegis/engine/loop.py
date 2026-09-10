@@ -57,6 +57,7 @@ class RunResult:
             "models_used": self.models_used,
             "tokens": {"input": self.input_tokens, "output": self.output_tokens},
             "duration_ms": round(self.duration_ms, 1),
+            "replayed": self.replayed,
             "error": self.error,
         }
 
@@ -85,11 +86,14 @@ class AgentEngine:
         *,
         max_turns: int = 30,
         max_tokens: int = 4096,
+        recorder: Any = None,
     ) -> None:
         self._tool_source = tool_source
         self._chain = chain
         self._max_turns = max_turns
         self._max_tokens = max_tokens
+        # Set to capture the model's turns so the run can be replayed later.
+        self._recorder = recorder
 
     async def run(self, incident_number: str) -> RunResult:
         started = time.perf_counter()
@@ -102,6 +106,8 @@ class AgentEngine:
             final_message=None,
         )
         audit = AuditLog()
+
+        result.replayed = any(p.name == "replay" for p in self._chain.providers)
 
         async with Client(self._tool_source, raise_exceptions=True) as client:
             listed = await client.list_tools()
@@ -135,6 +141,8 @@ class AgentEngine:
                     )
                     break
 
+                if self._recorder is not None:
+                    self._recorder.observe(completion)
                 self._record_completion(audit, result, completion)
                 messages.append(
                     Message(

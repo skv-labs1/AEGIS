@@ -66,10 +66,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  investigate: (number: string) =>
-    request<{ started: boolean; reason?: string }>(`/incidents/${number}/investigate`, {
-      method: "POST",
-    }),
+  investigate: (number: string, mode: "auto" | "live" | "replay" = "auto") =>
+    request<{ started: boolean; reason?: string; mode?: string; trace_origin?: string | null }>(
+      `/incidents/${number}/investigate?mode=${mode}`,
+      { method: "POST" },
+    ),
   investigations: () => request<{ investigations: Investigation[] }>("/investigations"),
   investigation: (id: number) => request<InvestigationDetail>(`/investigations/${id}`),
   approvals: (includeDecided = false) =>
@@ -252,7 +253,14 @@ export type Status = {
   workflow_managed: Record<string, string>;
   policy_version: number;
   engine: { available: boolean; providers: string[]; ready_providers?: string[]; reason?: string | null };
-  last_runs?: Record<string, { finished: string; error?: string | null; turns?: number; tool_calls?: number; providers_used?: string[] }>;
+  last_runs?: Record<
+    string,
+    { finished: string; error?: string | null; turns?: number; tool_calls?: number; providers_used?: string[]; replayed?: boolean }
+  >;
+  replay?: {
+    available_for: string[];
+    traces: Record<string, { origin: string; provider: string; model: string; turns: number; recorded_at: string; notes: string }>;
+  };
 };
 
 export type PolicyView = {

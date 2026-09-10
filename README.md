@@ -45,8 +45,11 @@ directly by an agent.
 
 Three ways, all governed identically:
 
-1. **From the console.** Open an incident and press *Start AI investigation*. This needs the
-   built-in engine, so set `GEMINI_API_KEY` or `GROQ_API_KEY` first.
+1. **From the console, with no API key.** Open INC-1042 and press *Replay investigation*.
+   Replay plays back the agent's decisions from a stored trace; the gateway, policy, approval
+   gate, remediation and verification all still run for real, so it still blocks for your
+   approval and still changes the device. With `GEMINI_API_KEY` or `GROQ_API_KEY` set, the
+   same button runs a live model instead.
 2. **From Claude Code.** `.mcp.json` already points at `http://127.0.0.1:8000/mcp`, so
    starting Claude Code in this directory gives it the governed tools. The console shows the
    run live either way, because the live view is a tail of the audit trail.
@@ -55,6 +58,10 @@ Three ways, all governed identically:
 
 Approvals appear in the console. `make pending` and `make approve ID=1 WHO="Your Name"` do
 the same thing from a terminal.
+
+The trace shipped for INC-1042 is **authored by hand, not recorded from a model**, and the
+console says so wherever it is used. Once a provider key is available,
+`make record-trace INC=INC-1042` replaces it with a real recording.
 
 When the agent proposes a remediation, its call blocks until a person decides. Answer it
 from a second terminal:
