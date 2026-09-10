@@ -27,6 +27,7 @@ governance model, the evaluation approach, and the open decisions.
 - The repo ships demo MCP servers for ITSM, ITAM, and endpoint management backed by synthetic data.
   No vendor integration is implemented or tested; any vendor or community MCP server can be attached
   through config.
-- It runs at zero token cost: the live agent is Claude Code or Claude Desktop on a personal plan, and
-  the hosted demo replays recorded runs without calling a model.
+- It runs at zero token cost. The built-in engine uses free-tier providers (Gemini Flash, then Groq)
+  behind a provider abstraction, so a paid provider is a config change. Claude Code on a personal
+  plan is a second host. Replay mode runs recorded traces with no model at all.
 - It is not a replacement for an ITSM platform.

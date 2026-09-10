@@ -1,6 +1,6 @@
 # Aegis — Architecture and Technology Stack Proposal
 
-Status: **Proposal (Phase 0), revision 3.** No application code has been written yet.
+Status: **Proposal (Phase 0), revision 4.** No application code has been written yet.
 
 Aegis is an **MCP server that governs agentic IT operations**. Any MCP-capable agent host (Claude
 Code, Claude Desktop, or a self-hosted agent loop) connects to Aegis and investigates and remediates
@@ -10,9 +10,10 @@ management) sit behind Aegis as their own MCP servers.
 
 Design constraints, in priority order:
 
-1. **Zero running cost.** No Anthropic API key. The agent runs on the author's Claude Pro plan via
-   Claude Code or Claude Desktop, which are the sanctioned ways to use that plan. The hosted public demo
-   runs recorded traces and calls no model at all.
+1. **Zero running cost.** The hosted demo's built-in engine runs on free-tier LLM providers (Gemini
+   Flash first, Groq/Llama 3.3 70B as fallback) behind a provider abstraction, so a paid provider is a
+   config change later. Claude Code on the author's Pro plan is a second, local host. Replay mode runs
+   recorded traces with no model at all.
 2. A working end-to-end demo that is reliable in an interview.
 3. Architecture a Solutions Engineer can walk a customer through, with MCP at the centre.
 4. Governance and explainability that hold up to an enterprise architect.
@@ -24,8 +25,9 @@ Design constraints, in priority order:
 | Concern | Recommendation | One-line reason |
 |---|---|---|
 | Core deliverable | **Aegis Gateway: an MCP server** (Python, official `mcp` SDK, Streamable HTTP) | The thing being showcased. Governance lives at the protocol layer, so it works with any host. |
-| Agent host (live demo) | **Claude Code on a Claude Pro plan**; Claude Desktop as an alternative | Zero token cost. Both are official MCP hosts. Claude Code exposes MCP prompts as slash commands, which makes a clean demo trigger. |
-| Agent host (optional, later) | **Aegis-owned loop against a local model via Ollama** | Also zero cost, fully offline, and demonstrates model independence. Connects to the same gateway. |
+| Agent host (hosted demo) | **Built-in engine: a thin agent loop over an `LLMProvider` abstraction**, connected to the gateway as an MCP client | Lets a visitor create an incident on the public page and watch a live run. Provider is config, not code. |
+| LLM providers | **Gemini Flash (primary), Groq / Llama 3.3 70B (fallback)**; Anthropic, OpenAI, Ollama adapters slot in later | Both have free tiers with tool calling. Fallback chain on rate limit or error, then replay. |
+| Agent host (local / interview) | **Claude Code on a Claude Pro plan**; Claude Desktop as an alternative | Zero token cost, official MCP host, MCP prompts as slash commands. Proves the gateway is host-independent. |
 | Enterprise systems (demo) | **Three MCP servers in the repo** (`itsm`, `itam`, `endpoint`) over synthetic data | Real process boundary. Inspectable with MCP Inspector. Swap one for a vendor MCP server via config. |
 | Workflow orchestration | **State machine inside the gateway**, enforced through tool availability and validation | The agent cannot execute before proposing, or resolve before verifying. Orchestration is enforced, not requested in a prompt. |
 | Governance | **YAML risk policy, approval gate, append-only audit log, default-deny for unclassified writes** | Policy is data a reviewer can read. Model's risk opinion is recorded; policy's classification decides. |
@@ -40,18 +42,14 @@ Design constraints, in priority order:
 
 ## 2. Why this shape
 
-### 2.1 Why the agent host is external, and why that is the better story
+### 2.1 Why governance lives in the gateway, not in the agent loop
 
-The first draft of this proposal had Aegis own the model loop through the Anthropic API. That costs
-money per run, and the Agent SDK documentation states that claude.ai logins may not be used to power
-third-party agents. Running the loop inside Claude Code or Claude Desktop instead is fully covered by a
-Pro plan and costs nothing extra.
-
-It also produces a stronger architecture. If governance lived in Aegis's own loop, it would only
-protect Aegis's own agent. Putting it in an MCP server means **any** agent that connects is governed:
-Claude Code today, an enterprise's own agent platform tomorrow. That is the "MCP gateway" pattern that
-enterprise platform teams are converging on, and it is the sentence to lead with in a post or an
-interview: *the agent is replaceable; the governance is not.*
+The first draft had Aegis own a Claude loop through the Anthropic API. Two problems: it costs money per
+run, and it only governs Aegis's own agent. Moving governance into an MCP server fixes both. Any host
+that connects is governed: the built-in engine on a free-tier model, Claude Code on a personal plan, or
+an enterprise's own agent platform later. That is the sentence to lead with in a post or interview:
+*the agent is replaceable; the governance is not.* The project demonstrates it literally, by running
+two very different hosts through the same gateway.
 
 ### 2.2 What "orchestration" means here
 
@@ -102,15 +100,90 @@ project. The docs say "attach any MCP server" and stop there.
   that path, so Aegis is the MCP server the host calls, and Aegis calls upstream.
 - The Agent SDK would let Aegis run the loop, but it requires an API key by policy. Not zero cost.
 
+### 2.5 LLM provider abstraction
+
+The built-in engine never imports a vendor SDK directly. It talks to an `LLMProvider` protocol:
+
+```python
+class LLMProvider(Protocol):
+    name: str
+    async def complete(
+        self,
+        messages: list[Message],          # normalised: system | user | assistant | tool
+        tools: list[ToolSpec],            # name, description, JSON Schema (from MCP tools/list)
+        response_schema: dict | None,     # optional structured output for diagnosis/proposal steps
+    ) -> Completion: ...                  # text, tool_calls[], usage, provider, model, latency
+```
+
+Adapters, in build order:
+
+| Adapter | Backs | Notes |
+|---|---|---|
+| `GeminiProvider` | Gemini Flash (primary) | Native `google-genai` SDK. Needs a JSON Schema sanitiser: Gemini's function-declaration schema rejects some keywords (`additionalProperties`, `$ref`, some formats). MCP schemas pass through it. |
+| `OpenAICompatibleProvider` | Groq / Llama 3.3 70B (fallback); later OpenAI, Ollama, OpenRouter, Together | One adapter, many providers, configured by `base_url` + model. |
+| `AnthropicProvider` | Claude, when a paid key is wanted | Not built until asked. The abstraction is designed so it is a single file. |
+
+Config (`backend/llm_providers.yaml`), selected at runtime with no code change:
+
+```yaml
+llm:
+  primary: gemini
+  fallbacks: [groq]            # tried in order on 429, 5xx, timeout, or malformed tool call
+  on_exhausted: replay         # last resort so the public demo never shows an error page
+  providers:
+    gemini:
+      kind: gemini
+      model: gemini-2.5-flash  # verify current Flash model id before use
+      api_key_env: GEMINI_API_KEY
+    groq:
+      kind: openai_compatible
+      base_url: https://api.groq.com/openai/v1
+      model: llama-3.3-70b-versatile   # verify current id
+      api_key_env: GROQ_API_KEY
+    anthropic:
+      kind: anthropic
+      model: claude-sonnet-5
+      api_key_env: ANTHROPIC_API_KEY
+      enabled: false
+```
+
+Rules the abstraction enforces so providers stay interchangeable:
+
+- **Tool calls are the only structured channel the loop relies on.** Native structured-output modes
+  differ across providers, so diagnosis and proposal are captured by the gateway's `record_diagnosis`
+  and `propose_remediation` tools with strict schemas, and `response_schema` is a per-adapter
+  optimisation, never a requirement.
+- **Every completion records `provider` and `model`** into the investigation's audit trail. The
+  metrics page can then compare root-cause accuracy, tool efficiency, and latency per provider. That
+  comparison is itself a good demo and post topic.
+- **One investigation at a time on the hosted demo**, queued. Free-tier rate limits are per minute
+  and a run makes 10 to 15 calls; concurrency would trip them.
+- **Prompt text is shared, not per provider.** If a provider needs special handling it goes in its
+  adapter, not in the prompt. The eval harness is what says whether a provider is good enough.
+- **Console control.** The IT Admin persona can pick the provider for a run from the console; the
+  choice is audited. A passcode gates live mode for public visitors; everyone else gets replay.
+
+Things to verify before building, because they drift: current free-tier limits and model ids for
+Gemini and Groq, whether Google uses free-tier prompts for training (synthetic data only is sent, so
+the exposure is nil, but say it in the docs), and Groq's structured-output support per model.
+
+Alternatives considered: **LiteLLM** (one interface to 100+ providers; heavier dependency, less
+control over tool-call normalisation, harder to explain in an interview) and **Pydantic AI** (model
+abstraction plus an MCP client built in; a good option, but a hand-written engine of a few hundred
+lines is easier to reason about and to show). Either could replace the engine later without touching
+the gateway, which is the point of the design.
+
 ---
 
 ## 3. Components
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│  Agent host (not part of Aegis)                                        │
-│  Claude Code (Pro)  |  Claude Desktop (Pro)  |  any MCP host           │
-│  Trigger: MCP prompt  /mcp__aegis__investigate_incident INC-1042       │
+│  Agent hosts                                                           │
+│  • Built-in engine (backend/aegis/engine): loop over LLMProvider       │
+│    Gemini Flash → Groq fallback → replay. Triggered from the console.  │
+│  • Claude Code / Claude Desktop (Pro plan), any other MCP host.        │
+│    Trigger: MCP prompt  /mcp__aegis__investigate_incident INC-1042     │
 └──────────────────────────────┬─────────────────────────────────────────┘
                                │ MCP (Streamable HTTP)
 ┌──────────────────────────────▼─────────────────────────────────────────┐
@@ -147,9 +220,18 @@ project. The docs say "attach any MCP server" and stop there.
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-**One Python process or two.** The gateway (MCP endpoint at `/mcp`) and the console API (`/api`) are
-separate packages and can run as one process by mounting the MCP app into FastAPI, or as two. Default
-to one for `make dev` simplicity; the Docker Compose file can split them to show the boundary.
+**Processes and hosting.** Locally, `make dev` runs one backend process (console API at `/api`, MCP
+gateway mounted at `/mcp`, built-in engine as a background worker) plus the three demo enterprise MCP
+servers. The hosted demo is the same backend in one container on a free-tier host (Hugging Face
+Spaces, Render, Koyeb, or Fly.io; verify current terms and expect sleep-on-idle cold starts of 30 to
+60 seconds), with the React console on Vercel. SQLite is reseeded on boot and a "Reset demo" button
+restores the synthetic state. Docker Compose can split gateway and console to show the boundary.
+
+**Console-driven flow.** Create an incident (free text plus affected user, or a one-click scenario),
+optionally with "investigate automatically". The engine picks it up, and the dashboard updates over SSE
+as calls pass through the gateway. Approval, remediation, and verification follow. A "Run action"
+button on the device page invokes the same governed tool by hand: same policy, same approval, same
+audit, which shows the gateway governs people and agents alike.
 
 **Approval mechanics.** `propose_remediation` returns a proposal id, the policy's risk class, and
 `status: awaiting_approval`. `execute_remediation(proposal_id)` checks the approval record; if still
@@ -242,13 +324,11 @@ key, no cost, and it cannot fail because a rate limit was hit. The UI shows a vi
 
 ---
 
-## 8. Optional second host: Aegis-owned loop on a local model
+## 8. Local models
 
-Phase 8, if time allows. A small Python loop in Aegis that connects to the gateway as an MCP client and
-drives a local model through Ollama's OpenAI-compatible endpoint (Qwen3 or Llama 3.x, 8B to 14B). Zero
-cost, offline, and it proves the governance layer is host-independent by running a second, very
-different host through the same gateway. Expect weaker multi-step tool use from small models; that is
-part of the story, not a problem to hide.
+With the provider abstraction in place, a local model is just another `openai_compatible` entry
+pointing at Ollama. Useful for offline demos and for the "fully self-hosted" question in interviews.
+Expect weaker multi-step tool use from small models; the eval metrics page will show it honestly.
 
 ---
 
@@ -259,6 +339,8 @@ aegis/
 ├── backend/
 │   ├── aegis/
 │   │   ├── gateway/           # MCP server: tools, prompts, resources, upstream MCP clients, state machine
+│   │   ├── engine/            # built-in agent loop (MCP client of the gateway), run queue
+│   │   │   └── providers/     # LLMProvider protocol, gemini.py, openai_compatible.py, schema_sanitiser.py
 │   │   ├── governance/        # policy loader, approval service, audit writer, roles
 │   │   ├── api/               # console API routers + SSE
 │   │   ├── evals/             # scenario loader, headless runner, scorers
@@ -267,6 +349,7 @@ aegis/
 │   │   └── config.py
 │   ├── policy/risk_policy.yaml
 │   ├── mcp_upstreams.yaml     # which enterprise MCP servers to connect to
+│   ├── llm_providers.yaml     # provider chain: primary, fallbacks, models, key env vars
 │   ├── scenarios/
 │   ├── traces/
 │   ├── tests/
@@ -295,13 +378,13 @@ aegis/
 
 ```mermaid
 sequenceDiagram
-    participant H as Claude Code (host, Pro plan)
+    participant H as Agent host (built-in engine or Claude Code)
     participant G as Aegis Gateway (MCP server)
     participant E as Enterprise MCP servers (demo)
     participant C as Aegis Console
     participant U as Approver (console)
 
-    H->>G: prompt investigate_incident INC-1042
+    H->>G: start_investigation INC-1042 (console trigger or MCP prompt)
     G->>G: start_investigation → state: investigating
     G-->>C: SSE run.started
     loop agentic investigation
@@ -341,11 +424,11 @@ sequenceDiagram
 | 1 | Three demo enterprise MCP servers + synthetic data + device simulator; verified with MCP Inspector | MCP Inspector |
 | 2 | Gateway: upstream clients, proxied READ tools, audit log, policy loader; connect from Claude Code and run reads | **Yes, first live moment** |
 | 3 | Workflow tools + state machine + approval service + verification; headline scenario end to end from Claude Code, approvals via a temporary CLI | Yes, terminal only |
-| 4 | Console: incidents, live timeline, approvals, verification, audit | **Yes, the full demo** |
-| 5 | Device intelligence, agent activity, policy page, replay mode | Yes |
-| 6 | Eval harness, scenarios, metrics page | Yes |
-| 7 | Dockerfile, hosted replay demo, demo script, README and post material | Public |
-| 8 | Optional: Aegis-owned loop on a local model via Ollama | Yes |
+| 4 | Built-in engine: `LLMProvider`, Gemini adapter, OpenAI-compatible adapter (Groq), fallback chain, run queue; headline scenario end to end with no Claude involved | Yes, terminal only |
+| 5 | Console: create incident, live timeline, approvals, verification, audit, manual action | **Yes, the full demo** |
+| 6 | Device intelligence, agent activity, policy page, provider selector, replay mode | Yes |
+| 7 | Eval harness, scenarios, metrics page with per-provider comparison | Yes |
+| 8 | Dockerfile, container host + Vercel deployment, passcode-gated live mode, demo script, post material | **Public** |
 
 ---
 
@@ -353,11 +436,13 @@ sequenceDiagram
 
 Defaults are stated; none block Phase 1.
 
-1. **Primary host.** Claude Code. Claude Desktop as a documented alternative once its remote MCP
-   support on the Pro plan is confirmed.
-2. **Gateway and console in one process** for local dev, split in Docker Compose. Fine?
-3. **Replay mode.** Build it; it is what makes the hosted demo free and safe.
-4. **Ollama host.** Phase 8, only if time allows.
+1. **Providers.** Gemini Flash primary, Groq / Llama 3.3 70B fallback, replay as last resort. Anthropic
+   adapter only when asked. Decided.
+2. **Engine implementation.** Hand-written thin loop over `LLMProvider`. Pydantic AI or LiteLLM are the
+   framework alternatives if speed of delivery matters more than explainability.
+3. **Container host for the backend.** To be chosen after checking current free tiers. Frontend on
+   Vercel. Decided.
+4. **Live-mode gating.** Passcode for live runs on the public demo; replay for everyone else. Decided.
 5. **Persona-based approvals**, no real login.
 
 ---
@@ -368,7 +453,8 @@ Defaults are stated; none block Phase 1.
   is implemented or tested. Any MCP server can be attached; none has been.
 - No real endpoint action is executed. Remediation mutates a simulated device inside the demo
   endpoint server.
-- The agent host is Claude Code or Claude Desktop used under the author's own plan for personal
-  development and demonstration. Aegis does not offer claude.ai login or model access to anyone.
+- The hosted demo's model calls go to free-tier third-party providers under their terms, with
+  synthetic data only. Claude Code or Claude Desktop is used only locally under the author's own plan.
+  Aegis does not offer claude.ai login or model access to anyone.
 - Production security is limited to the demonstrated patterns: policy, approvals, audit, secrets
   hygiene, untrusted-data handling.
