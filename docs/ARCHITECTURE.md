@@ -1,6 +1,6 @@
 # Aegis — Architecture and Technology Stack Proposal
 
-Status: **Proposal (Phase 0), revision 4.** No application code has been written yet.
+Status: **Proposal (Phase 0), revision 5.** No application code has been written yet.
 
 Aegis is an **MCP server that governs agentic IT operations**. Any MCP-capable agent host (Claude
 Code, Claude Desktop, or a self-hosted agent loop) connects to Aegis and investigates and remediates
@@ -280,7 +280,64 @@ instructions. One eval scenario plants an injected instruction to test this.
 
 ---
 
-## 5. Console pages
+## 5. Data handling: demo data now, live data later
+
+**Demo data lives in the repo.** Seed files under `mcp-servers/seed/` (users, devices, assets,
+software, patches, health telemetry, historical incidents) are the source of truth. The demo MCP
+servers build `enterprise_demo.db` from them on startup. The database is a disposable runtime cache: a
+redeploy or the console's "Reset demo" button reseeds it, every visitor and every interview starts from
+the same state, and eval scenarios are reproducible because their seed state is versioned with the
+code. Recorded replay traces live in `backend/traces/` for the same reason. Nothing external is needed
+to run the hosted demo in replay mode.
+
+**Live data is fetched, never mirrored.** When a real ITSM, CMDB, or endpoint platform replaces a demo
+server, Aegis does not sync or copy its data. Each call from the agent is forwarded through the gateway
+to the vendor MCP server, which queries the live system and returns the current record. The console's
+incident queue is a live `search_incidents` call through the same path. The vendor server holds the
+service-account or OAuth credentials in its own environment; Aegis never sees them. Swapping a system is
+one entry in `mcp_upstreams.yaml`.
+
+```text
+Aegis gateway ──MCP──▶ vendor MCP server ──REST──▶ live ITSM / CMDB / MDM
+                       (vendor-provided, or written
+                        once against the vendor API,
+                        mapping to the canonical contract)
+```
+
+**What Aegis stores, and why.**
+
+| Data | Stored in `aegis.db`? | Reason |
+|---|---|---|
+| Enterprise master data (users, devices, assets, tickets) | No | The ITSM and CMDB remain the systems of record. No sync job, no stale copy, no second source of truth. |
+| Evidence snapshots: each tool result the agent saw during a run | Yes, tied to the investigation, redacted | Auditability. Months later, "what did the agent see when it decided?" must be answerable, and the live record will have changed. |
+| Diagnosis, proposal, approval, verification, audit events | Yes | Aegis's own workflow state. |
+| Write-backs: work notes, resolution, state change | No; they go to the ITSM through the vendor server | The ticket remains the record of resolution. Aegis keeps the reference and the audit event. |
+
+**Controls that matter once the data is real.**
+
+- *Redaction before storage and before the model.* The gateway normalises every tool result. The same
+  step masks fields the policy marks sensitive, so evidence holds what the decision needed and no more.
+- *Retention.* Evidence has a configurable retention period. Audit events may outlive the evidence
+  they reference.
+- *Short-lived cache, not persistence.* A per-investigation cache with a TTL of about a minute stops
+  the agent re-fetching the same record and protects vendor rate limits. Discarded when the run ends.
+- *Triggers.* The demo creates incidents in the console. Against a live ITSM, an inbound webhook or a
+  poll on `search_incidents` for new tickets opens an investigation; the workflow is identical after
+  that point.
+- *Semantic mapping lives in the vendor server.* Translating a vendor's fields and lifecycle into the
+  canonical contract is the real integration work. It is written once per vendor and reused by every
+  host.
+
+**Persistence for Aegis's own state, if wanted.** SQLite in the container is the default and a
+redeploy resets it. If audit history, eval results, or traces should survive redeploys, move only
+`aegis.db` to a free serverless Postgres (Neon is the first choice; Supabase pauses idle projects;
+Turso is SQLite-compatible but needs its own driver). One connection-string change. Free-tier terms
+drift; verify before choosing. The enterprise demo data never moves to a hosted database that Aegis
+reads directly; it stays behind the demo MCP servers.
+
+---
+
+## 6. Console pages
 
 | Route | Purpose |
 |---|---|
@@ -294,7 +351,7 @@ instructions. One eval scenario plants an injected instruction to test this.
 
 ---
 
-## 6. Evaluation
+## 7. Evaluation
 
 Scenarios are JSON: seeded enterprise state, incident text, expected root-cause category, acceptable
 remediations, whether approval must be requested, evidence that must be cited. The runner executes each
@@ -315,7 +372,7 @@ Initial scenarios (target 8):
 
 ---
 
-## 7. Replay mode and the hosted demo
+## 8. Replay mode and the hosted demo
 
 Every live run leaves a complete event trace in `aegis.db`. Selected traces are exported to
 `backend/traces/` and checked in. `AEGIS_MODE=replay` plays a trace through the console with realistic
@@ -324,7 +381,7 @@ key, no cost, and it cannot fail because a rate limit was hit. The UI shows a vi
 
 ---
 
-## 8. Local models
+## 9. Local models
 
 With the provider abstraction in place, a local model is just another `openai_compatible` entry
 pointing at Ollama. Useful for offline demos and for the "fully self-hosted" question in interviews.
@@ -332,7 +389,7 @@ Expect weaker multi-step tool use from small models; the eval metrics page will 
 
 ---
 
-## 9. Repository layout
+## 10. Repository layout
 
 ```text
 aegis/
@@ -374,7 +431,7 @@ aegis/
 
 ---
 
-## 10. The headline demo, end to end
+## 11. The headline demo, end to end
 
 ```mermaid
 sequenceDiagram
@@ -416,7 +473,7 @@ sequenceDiagram
 
 ---
 
-## 11. Development phases
+## 12. Development phases
 
 | Phase | Deliverable | Demo-able? |
 |---|---|---|
@@ -432,7 +489,7 @@ sequenceDiagram
 
 ---
 
-## 12. Decisions that need your input
+## 13. Decisions that need your input
 
 Defaults are stated; none block Phase 1.
 
@@ -447,7 +504,7 @@ Defaults are stated; none block Phase 1.
 
 ---
 
-## 13. What this project does not claim
+## 14. What this project does not claim
 
 - No real ServiceNow, Ivanti, Freshworks, BMC, Jira Service Management, Intune, or Jamf integration
   is implemented or tested. Any MCP server can be attached; none has been.
