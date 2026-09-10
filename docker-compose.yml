@@ -1,0 +1,25 @@
+# Local run of the same image the hosted demo uses.
+#
+#   docker compose up --build   then open http://127.0.0.1:8000
+#
+# The volume keeps investigations and the audit trail across restarts. Remove it
+# to start from a clean slate, or press "Reset demo" in the console.
+
+services:
+  aegis:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Set either to run investigations on a live model. Without one, the
+      # console offers replay instead, which needs no key.
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      # Gate live model runs behind a passcode when the demo is public.
+      AEGIS_LIVE_PASSCODE: "${AEGIS_LIVE_PASSCODE:-}"
+    volumes:
+      - aegis-data:/data
+    restart: unless-stopped
+
+volumes:
+  aegis-data:

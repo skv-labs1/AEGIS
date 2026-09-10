@@ -24,8 +24,12 @@ class Check:
     weight: float = 1.0
 
     def as_dict(self) -> dict[str, Any]:
-        return {"check": self.name, "passed": self.passed, "detail": self.detail,
-                "weight": self.weight}
+        return {
+            "check": self.name,
+            "passed": self.passed,
+            "detail": self.detail,
+            "weight": self.weight,
+        }
 
 
 @dataclass
@@ -88,9 +92,7 @@ def score_investigation(
     )
 
     # 2. Does the stated root cause match the real one?
-    haystack = _text(
-        diagnosis.get("root_cause"), *(diagnosis.get("contributing_factors") or [])
-    )
+    haystack = _text(diagnosis.get("root_cause"), *(diagnosis.get("contributing_factors") or []))
     required = expectations.get("root_cause_keywords") or []
     hits = [k for k in required if k.lower() in haystack]
     score.add(
@@ -128,7 +130,9 @@ def score_investigation(
             score.add(
                 "no_remediation_proposed",
                 not actions,
-                "Correctly proposed nothing" if not actions else f"Proposed {actions} when none was warranted",
+                "Correctly proposed nothing"
+                if not actions
+                else f"Proposed {actions} when none was warranted",
                 weight=2.0,
             )
         else:

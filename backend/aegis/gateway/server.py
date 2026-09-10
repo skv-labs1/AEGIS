@@ -87,6 +87,7 @@ class AegisGateway:
         approvals: ApprovalService | None = None,
     ) -> None:
         self.settings = settings or get_settings()
+        self.settings.require_files()
         self.policy = RiskPolicy.load(self.settings.policy_file)
         self.approvals: ApprovalService = approvals or NoApproverConfigured()
         self.host = MCPHost(

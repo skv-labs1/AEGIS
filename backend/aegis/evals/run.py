@@ -68,8 +68,12 @@ def _reseed() -> None:
 
     with session_scope() as db:
         for table in (
-            "verifications", "proposals", "investigations", "evidence",
-            "audit_events", "gateway_sessions",
+            "verifications",
+            "proposals",
+            "investigations",
+            "evidence",
+            "audit_events",
+            "gateway_sessions",
         ):
             db.execute(text(f"DELETE FROM {table}"))
 
@@ -113,7 +117,9 @@ async def main_async(provider: str | None, only: list[str] | None, save: bool) -
             if live is not None:
                 chain = live
             elif scenario.incident_number.upper() in traces:
-                chain = ProviderChain(providers=[ReplayProvider(traces[scenario.incident_number.upper()], pacing=0)])
+                chain = ProviderChain(
+                    providers=[ReplayProvider(traces[scenario.incident_number.upper()], pacing=0)]
+                )
             else:
                 skipped.append(
                     {
@@ -137,18 +143,25 @@ async def main_async(provider: str | None, only: list[str] | None, save: bool) -
             # The rejection scenario changes the approver, not the agent, so it
             # runs under replay perfectly well.
             gateway.approvals = (
-                RejectEverything() if scenario.variant == "reject every approval"
+                RejectEverything()
+                if scenario.variant == "reject every approval"
                 else AutoApproveForTesting()
             )
             gateway.workflow._approvals = gateway.approvals
 
             print(f"running {scenario.id} ...", flush=True)
             outcome = await run_scenario(
-                scenario, gateway.server, chain, reseed=_reseed, seed_incident=_seed_incident(gateway)
+                scenario,
+                gateway.server,
+                chain,
+                reseed=_reseed,
+                seed_incident=_seed_incident(gateway),
             )
             report.outcomes.append(outcome)
             mark = "pass" if outcome.score.passed else "FAIL"
-            print(f"  {mark}  score {outcome.score.fraction:.2f}  {outcome.score.as_dict()['failed_checks']}")
+            print(
+                f"  {mark}  score {outcome.score.fraction:.2f}  {outcome.score.as_dict()['failed_checks']}"
+            )
     finally:
         await gateway.stop()
 

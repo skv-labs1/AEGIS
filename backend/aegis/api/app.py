@@ -222,6 +222,7 @@ def _register(app: FastAPI) -> None:
                 "available": bool(console.chain and console.chain.usable),
                 "providers": console.chain.names if console.chain else [],
                 "ready_providers": console.chain.ready_names if console.chain else [],
+                "passcode_required": bool(get_settings().live_passcode),
                 "reason": (
                     None
                     if console.chain and console.chain.usable
@@ -333,12 +334,36 @@ def _register(app: FastAPI) -> None:
         return created
 
     @app.post("/api/incidents/{number}/investigate")
-    async def investigate(number: str, mode: str = "auto") -> dict[str, Any]:
+    async def investigate(
+        number: str,
+        mode: str = "auto",
+        x_aegis_passcode: str | None = Header(default=None),
+    ) -> dict[str, Any]:
         """Start an investigation.
 
         `mode` is auto, live or replay. Auto prefers a live model and falls back
         to a stored trace, which is what lets the demo run with no API key.
+
+        On a public deployment a passcode gates live runs, because a stranger
+        can otherwise exhaust the free-tier quota in a few clicks. Replay stays
+        open to everyone.
         """
+        settings = get_settings()
+        gated = (
+            settings.live_passcode
+            and mode in ("auto", "live")
+            and x_aegis_passcode != settings.live_passcode
+        )
+        if gated:
+            if mode == "live":
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Live model runs on this deployment need a passcode. Replay is "
+                        "open to everyone and shows the same governed workflow."
+                    ),
+                )
+            mode = "replay"
         return _start_run(number, mode)
 
     def _start_run(number: str, mode: str = "auto") -> dict[str, Any]:
@@ -531,7 +556,10 @@ def _register(app: FastAPI) -> None:
             runs = db.query(EvalRun).order_by(EvalRun.id.desc()).limit(10).all()
             latest = runs[0] if runs else None
             results = (
-                [r.as_dict() for r in db.query(EvalResult).filter(EvalResult.run_id == latest.id).all()]
+                [
+                    r.as_dict()
+                    for r in db.query(EvalResult).filter(EvalResult.run_id == latest.id).all()
+                ]
                 if latest
                 else []
             )
@@ -543,7 +571,9 @@ def _register(app: FastAPI) -> None:
         by_provider: dict[str, dict[str, Any]] = {}
         for event in model_calls:
             name = (event.result or {}).get("provider", "unknown")
-            entry = by_provider.setdefault(name, {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+            entry = by_provider.setdefault(
+                name, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+            )
             entry["calls"] += 1
             entry["input_tokens"] += (event.result or {}).get("input_tokens", 0) or 0
             entry["output_tokens"] += (event.result or {}).get("output_tokens", 0) or 0

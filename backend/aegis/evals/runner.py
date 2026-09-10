@@ -144,9 +144,7 @@ def read_record(incident_number: str) -> tuple[dict | None, list, list, list]:
         ]
         proposals = [
             p.as_dict()
-            for p in db.query(Proposal)
-            .filter(Proposal.investigation_id == investigation.id)
-            .all()
+            for p in db.query(Proposal).filter(Proposal.investigation_id == investigation.id).all()
         ]
         verifications = [
             v.as_dict()
@@ -174,7 +172,9 @@ async def run_scenario(
     engine = AgentEngine(tool_source, chain)
     result = await engine.run(scenario.incident_number)
     investigation, events, proposals, verifications = read_record(scenario.incident_number)
-    score = score_investigation(scenario.expectations, investigation, events, proposals, verifications)
+    score = score_investigation(
+        scenario.expectations, investigation, events, proposals, verifications
+    )
 
     return ScenarioOutcome(
         scenario=scenario,
