@@ -22,6 +22,7 @@ governance model, the evaluation approach, and the open decisions.
 
 - It is a working demonstration of agentic investigation, tool calling, integration abstraction,
   human-in-the-loop governance, verification, and auditability.
-- It uses synthetic enterprise data behind a provider abstraction. No vendor integration is
-  implemented. The design shows where one would plug in.
+- Enterprise systems are reached over the Model Context Protocol (MCP). The repo ships demo MCP
+  servers for ITSM, ITAM, and endpoint management backed by synthetic data. No vendor integration is
+  implemented or tested; any vendor or community MCP server can be attached through config.
 - It is not a replacement for an ITSM platform.

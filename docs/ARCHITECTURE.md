@@ -23,7 +23,8 @@ product. Every decision below is optimised for four things, in this order:
 | Agent runtime | **Anthropic SDK, hand-written tool loop inside a deterministic phase orchestrator** | Governance requires owning the loop. Frameworks hide exactly the parts we need to show. |
 | Model | **`claude-opus-5`** (configurable) | Strongest tool-use and reasoning at Opus pricing. Swap to `claude-sonnet-5` via env var for cheaper public demos. |
 | Structured decisions | **Structured outputs (`output_config.format`)** for diagnosis, recommendation, risk assessment | Guarantees schema-valid JSON the UI and audit log can rely on. |
-| Integration abstraction | **Provider interfaces (Python Protocols) + adapter registry** | The agent never talks to a system directly; it calls tools, tools call providers, providers wrap systems. |
+| Integration abstraction | **Model Context Protocol (MCP).** Aegis is an MCP host; every enterprise system is an MCP server | Open standard. Swapping the demo ITSM for ServiceNow means pointing config at a different MCP server. Tools are discovered, not hard-coded. |
+| Demo enterprise systems | **Three MCP servers shipped in the repo** (`itsm`, `itam`, `endpoint`), separate processes over Streamable HTTP, backed by synthetic data | Shows a real client/server boundary an interviewer can inspect with MCP Inspector. |
 | Enterprise data (demo) | **Separate simulated-enterprise SQLite database** seeded with synthetic data | Physically separates "Aegis's own state" from "the systems Aegis integrates with." |
 | Aegis state / audit | **SQLite via SQLAlchemy 2.0** (Postgres-ready) | Zero setup locally; one env var to move to Postgres for a hosted demo. |
 | Frontend | **React 18 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack Query** | Fast to build a dense, credible ops console; not a chatbot. |
@@ -43,7 +44,7 @@ product. Every decision below is optimised for four things, in this order:
 - Hiring managers in AI Engineering and Solutions Engineering expect Python. It signals fluency with
   the ecosystem (Anthropic SDK, Pydantic, evaluation tooling).
 - FastAPI gives typed request/response models, automatic OpenAPI docs at `/docs` (useful in a demo to
-  show "this is an API-first platform"), async I/O for concurrent provider calls, and streaming
+  show "this is an API-first platform"), async I/O for concurrent MCP calls, and streaming
   responses out of the box.
 - Alternative considered: **Next.js full-stack (TypeScript everywhere)**. Simpler single-language repo,
   but the Python agent ecosystem and evaluation tooling are stronger, and a Python/TypeScript split
@@ -98,9 +99,12 @@ Two API features worth using explicitly because they map to enterprise concerns:
   declines a request. Aegis's content is benign IT data, so this should never trigger, but showing
   that the integration handles a `refusal` stop reason is good hygiene.
 
-### 2.4 Integration layer: providers, adapters, and controlled tools
+### 2.4 Integration layer: MCP servers, an MCP host, and controlled tools
 
-Three distinct layers, each with one job:
+The integration boundary is the **Model Context Protocol**. Aegis does not contain vendor SDK code or
+Python adapter classes. It is an MCP *host*: at startup it connects to the MCP servers listed in its
+config, calls `tools/list` on each, and registers what it finds. Every enterprise system, demo or
+real, is an MCP *server*.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -110,54 +114,81 @@ Three distinct layers, each with one job:
                                 │ tool_use
 ┌───────────────────────────────▼──────────────────────────────────┐
 │  Controlled Tools  (aegis/tools/*)                               │
-│  • Pydantic input/output schemas                                 │
-│  • risk class: READ | WRITE_LOW | WRITE_MEDIUM | WRITE_HIGH      │
-│  • policy check → approval gate → audit event → execute          │
-│  • redacts/normalises provider output before returning to model  │
+│  • wraps every discovered MCP tool                               │
+│  • risk class from policy: READ | WRITE_LOW | WRITE_MEDIUM |     │
+│    WRITE_HIGH | UNCLASSIFIED (default-deny for writes)           │
+│  • policy check → approval gate → audit event → tools/call       │
+│  • normalises / redacts server output before it reaches model    │
 └───────────────────────────────┬──────────────────────────────────┘
-                                │ typed domain calls
+                                │ MCP (JSON-RPC over Streamable HTTP)
 ┌───────────────────────────────▼──────────────────────────────────┐
-│  Integration Layer  (aegis/integrations/*)                       │
-│  Protocols: ITSMProvider, ITAMProvider, EndpointProvider,        │
-│             SoftwareInventoryProvider, PatchProvider,            │
-│             DeviceHealthProvider, IncidentHistoryProvider        │
-│  Registry: picks an adapter per capability from config           │
+│  MCP Host  (aegis/mcp_host/*)   official `mcp` Python SDK        │
+│  • one client session per configured server                      │
+│  • tool discovery, namespacing (itsm.get_incident), health       │
+│  • reconnect, timeouts, per-server allow/deny lists              │
 └──────┬─────────────────┬─────────────────┬───────────────────────┘
        │                 │                 │
 ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
-│ demo adapter│   │ demo adapter│   │ demo adapter│   ← shipped
-│ (SQLite)    │   │ (SQLite)    │   │ (SQLite)    │
+│ mcp-itsm    │   │ mcp-itam    │   │ mcp-endpoint│   ← shipped, synthetic data,
+│ (demo)      │   │ (demo)      │   │ (demo)      │     separate processes
 └─────────────┘   └─────────────┘   └─────────────┘
-   ServiceNow /      ServiceNow /     Intune / Jamf /     ← interface documented,
-   Jira SM / BMC     Ivanti / Flexera Ivanti Neurons        NOT implemented
+  ServiceNow /       ServiceNow /      Intune / Jamf /  ← any MCP server, vendor
+  Freshservice /     Ivanti /          Ivanti Neurons     or community. None
+  Ivanti / Jira SM   Flexera                              tested or claimed.
 ```
 
-Key rules:
+**Why MCP rather than in-process adapters.** It is an open standard with growing vendor support, it
+makes the integration boundary a real process boundary that an interviewer can inspect (MCP Inspector
+can connect to the demo servers directly), and it means "add a system" is a config change plus an MCP
+server, not a code change in Aegis. It is also the integration pattern hiring managers in AI and SE
+roles are currently asking about.
 
-- **The agent only ever sees tools.** It does not know whether `get_device_health` is backed by
-  synthetic SQLite data or Microsoft Intune. That is the abstraction.
-- **Providers are capability-scoped, not vendor-scoped.** ServiceNow can satisfy ITSM *and* ITAM;
-  Intune can satisfy Endpoint *and* Patch. The registry maps capabilities to adapters via config
-  (`AEGIS_PROVIDER_ITSM=demo`, etc.).
-- **Only the `demo` adapters ship.** The docs describe what a ServiceNow or Ivanti adapter would need
-  to implement (a table of `Protocol` method → vendor API endpoint), but the repo will not contain
-  stub classes that might be mistaken for real integrations.
-- **Domain models are vendor-neutral.** `Incident`, `User`, `Device`, `Asset`, `SoftwareItem`,
-  `Patch`, `HealthSnapshot` are Pydantic models owned by Aegis. Adapters translate to and from them.
+**Honest limitation, stated in the UI and docs.** MCP standardises how a tool is exposed, not what it
+means. ServiceNow's `incident`, Freshservice's `ticket`, and Ivanti's `ServiceReq` have different
+fields and state models. Aegis handles that at two levels:
+
+1. **The demo servers implement a documented canonical tool contract** (`docs/MCP_CONTRACT.md`): for
+   ITSM, tools such as `get_incident`, `search_incidents`, `add_work_note`, `resolve_incident`; for ITAM,
+   `get_asset`, `get_assets_for_user`; for Endpoint, `get_device`, `get_device_health`,
+   `get_installed_software`, `get_patch_status`, `restart_application`, `clear_disk_space`. A vendor
+   MCP server written to this contract drops in with zero prompt changes.
+2. **Any other MCP server can be attached as-is.** Its tools are discovered, namespaced by server, and
+   offered to the model with the server's own descriptions. The model does the semantic mapping. This
+   is more flexible and less predictable, which is exactly why the policy layer defaults unknown tools
+   to `UNCLASSIFIED` (reads allowed and logged, writes denied) until an administrator classifies them.
+   Attaching a second server live and watching the policy engine quarantine its write tools is a
+   planned demo moment.
+
+**Why not the Anthropic API's server-side MCP connector.** The Messages API can call MCP servers
+itself (`mcp_servers` + `mcp_toolset`). Aegis deliberately does not use it for governed tools, because
+the call would then execute inside Anthropic's infrastructure and the approval gate could not sit
+between the model's request and the execution. Aegis runs its own MCP client so that every call
+passes through policy and audit. This is the concrete reason to own the loop.
+
+**Transport.** Streamable HTTP for all servers. Locally `make dev` starts the three demo servers on
+their own ports; in Docker Compose they are separate services. stdio is supported by the SDK and can
+be enabled per server in config, but HTTP is the default because it matches how a vendor-hosted MCP
+server would be reached.
+
+**Aegis as an MCP server (optional, Phase 7).** A thin `aegis-mcp` server exposing
+`start_investigation`, `get_investigation`, `approve_action`. This lets Claude Desktop or Claude Code
+drive Aegis, and lets the project show both sides of the protocol. Low effort with the SDK's
+`FastMCP` helper; not on the critical path.
 
 ### 2.5 Two databases, on purpose
 
 | Database | Contains | Owned by |
 |---|---|---|
-| `enterprise_demo.db` | Synthetic users, devices, assets, software inventory, patch status, health telemetry, historical incidents | "The enterprise". Aegis reads it only through providers. |
+| `enterprise_demo.db` | Synthetic users, devices, assets, software inventory, patch status, health telemetry, historical incidents | "The enterprise". Only the demo MCP servers touch it. The Aegis backend has no connection to it. |
 | `aegis.db` | Investigations, investigation events (audit log), evidence, diagnoses, recommendations, approvals, remediation runs, verification results, eval runs | Aegis itself. |
 
 This split is a deliberate architectural statement: Aegis's own store never holds a copy of enterprise
-master data. When a real adapter replaces the demo one, `enterprise_demo.db` simply stops being used.
+master data, and the Aegis process never opens `enterprise_demo.db`. When a real MCP server replaces a
+demo one, the demo server and its database simply stop being started.
 Both are SQLite locally via SQLAlchemy 2.0; `aegis.db` can move to Postgres by changing one URL.
 
-The **remediation tools also write to `enterprise_demo.db`** (via an `EndpointActionProvider`), which
-is what makes the before/after verification real rather than faked: `clear_disk_space` actually
+The **demo endpoint MCP server also mutates `enterprise_demo.db`** when a remediation tool is called,
+which is what makes the before/after verification real rather than faked: `clear_disk_space` actually
 reduces the simulated device's disk utilisation, and the subsequent `get_device_health` read reflects
 it. The demo data model includes a small deterministic "device simulator" so effects are plausible
 (e.g. clearing temp files recovers a bounded amount of space, restarting Outlook resets crash count).
@@ -194,8 +225,8 @@ it. The demo data model includes a small deterministic "device simulator" so eff
   event type, payload, and for tool calls the full input, the redacted output, the policy decision,
   and latency. The Audit Trail page is a read of this table, nothing more.
 
-- **Untrusted data boundary.** Provider output is normalised into typed models before it reaches the
-  model, and free-text fields from enterprise systems (ticket descriptions, comments) are wrapped so the
+- **Untrusted data boundary.** MCP tool results are validated against the server's declared output schema
+  (where present) and normalised before they reach the model, and free-text fields from enterprise systems (ticket descriptions, comments) are wrapped so the
   system prompt can instruct the model to treat them as data, not instructions.
 
 ### 2.7 Frontend
@@ -273,24 +304,31 @@ aegis/
 │   │   ├── api/               # FastAPI routers (incidents, investigations, approvals, devices, metrics, stream)
 │   │   ├── agent/             # orchestrator (phases), tool loop, prompts, structured output schemas
 │   │   ├── tools/             # controlled tools: schema + risk class + policy + audit wrapper
-│   │   ├── integrations/      # Protocols, domain models, registry, adapters/demo/*
+│   │   ├── mcp_host/          # MCP client sessions, discovery, namespacing, server config
 │   │   ├── governance/        # risk policy loader, approval service, audit writer, roles
-│   │   ├── simulation/        # device simulator that applies remediation effects to demo data
 │   │   ├── evals/             # scenario loader, runner, scorers
 │   │   ├── db/                # SQLAlchemy models + session management for aegis.db
 │   │   └── config.py          # pydantic-settings
 │   ├── policy/risk_policy.yaml
-│   ├── seed/                  # synthetic enterprise data + seed script
+│   ├── mcp_servers.yaml       # which MCP servers to connect to, transport, allow/deny lists
 │   ├── scenarios/             # eval scenarios (JSON)
 │   ├── traces/                # recorded live runs for replay mode
 │   ├── tests/
 │   └── pyproject.toml
+├── mcp-servers/               # demo MCP servers, each its own package, synthetic data only
+│   ├── itsm/                  # get_incident, search_incidents, add_work_note, resolve_incident
+│   ├── itam/                  # get_asset, get_assets_for_user, get_warranty
+│   ├── endpoint/              # get_device, get_device_health, get_installed_software,
+│   │                          # get_patch_status, restart_application, clear_disk_space
+│   ├── common/                # shared SQLite access + device simulator for remediation effects
+│   └── seed/                  # synthetic enterprise data + seed script
 ├── frontend/
 │   ├── src/{pages,components,hooks,api,lib}
 │   └── package.json
 ├── docs/
 │   ├── ARCHITECTURE.md        # this file
-│   ├── INTEGRATIONS.md        # provider protocols and how a real adapter would map (later)
+│   ├── MCP_CONTRACT.md        # canonical tool contract the demo servers implement (later)
+│   ├── INTEGRATIONS.md        # attaching a vendor MCP server, classifying its tools (later)
 │   └── DEMO_SCRIPT.md         # the stage walkthrough (later)
 ├── docker-compose.yml
 ├── Dockerfile
@@ -309,7 +347,7 @@ sequenceDiagram
     participant O as Orchestrator
     participant C as Claude (claude-opus-5)
     participant T as Controlled Tools
-    participant P as Providers (demo adapters)
+    participant M as MCP servers (demo)
     participant A as Audit log
 
     U->>API: POST /api/incidents/INC-1042/investigate
@@ -319,8 +357,8 @@ sequenceDiagram
     loop investigate (agentic)
         C-->>O: tool_use get_user / get_device / get_device_health / ...
         O->>T: policy check (READ → auto-allow)
-        T->>P: typed call
-        P-->>T: domain object
+        T->>M: tools/call (MCP)
+        M-->>T: result
         T->>A: tool.called (input, output, latency)
         T-->>C: tool_result
         O-->>U: SSE event (timeline updates live)
@@ -335,7 +373,7 @@ sequenceDiagram
     U->>API: POST /api/approvals/{id}/approve
     API->>A: approval.granted (by user, role)
     O->>T: execute clear_disk_space
-    T->>P: EndpointActionProvider → simulator mutates demo state
+    T->>M: tools/call clear_disk_space → server mutates demo state
     O->>T: get_device_health (verification read)
     O->>C: verify (structured output: before/after, verdict)
     O->>T: update_incident (work notes + resolution) → policy WRITE_LOW, auto
@@ -350,13 +388,13 @@ sequenceDiagram
 | Phase | Deliverable | Demo-able? |
 |---|---|---|
 | 0 | This proposal, repo skeleton, tooling | No |
-| 1 | Domain models, provider Protocols, demo adapters, synthetic data seed, `enterprise_demo.db` | API only |
-| 2 | Controlled tools + risk policy + audit writer + approval service | API only |
+| 1 | Three demo MCP servers + synthetic data seed + `enterprise_demo.db`; verifiable with MCP Inspector | MCP Inspector |
+| 2 | MCP host (discovery, namespacing) + controlled tools + risk policy + audit writer + approval service | API only |
 | 3 | Orchestrator + Claude tool loop + structured outputs + SSE stream; headline scenario works end to end via API | CLI demo |
 | 4 | Frontend: incidents, investigation view, approvals, audit trail | **Yes, full demo** |
 | 5 | Device intelligence, agent activity, replay mode, recorded traces | Yes |
 | 6 | Eval harness, scenarios, metrics page | Yes |
-| 7 | Dockerfile, hosted deployment, demo script, README polish | Public demo |
+| 7 | Dockerfile, hosted deployment, demo script, README polish, optional Aegis-as-MCP-server | Public demo |
 
 Phases 1 to 3 are where the architecture is proven. Phase 4 is where it becomes a portfolio piece.
 
@@ -376,13 +414,17 @@ None of these block Phase 1. Defaults are stated; say so if you want something d
    Postgres container to `docker-compose` if you want to demonstrate it explicitly.
 5. **Multi-agent.** Proposal: single agent, phased orchestrator. A specialist subagent split is
    possible later but adds complexity without adding demo value at this stage.
+6. **Aegis as an MCP server.** Proposal: build it in Phase 7 if time allows. It is a strong closing
+   point in an interview ("both sides of the protocol") but not needed for the core demo.
 
 ---
 
 ## 7. What this project does not claim
 
-- No real ServiceNow, Ivanti, BMC, Jira Service Management, Intune, or Jamf integration is
-  implemented. The integration layer is designed so one could be added; the docs will describe how.
+- No real ServiceNow, Ivanti, Freshworks, BMC, Jira Service Management, Intune, or Jamf integration
+  is implemented or tested. The integration boundary is MCP; any vendor or community MCP server can be
+  attached through config, and the docs describe how. Which vendors ship official MCP servers changes
+  frequently and must be verified before being stated in a demo.
 - No real endpoint actions are executed. Remediation mutates a simulated device state.
 - No production security controls beyond the demonstrated governance patterns (policy, approvals,
   audit, secrets hygiene, untrusted-data handling).
