@@ -7,6 +7,8 @@ is exercised the way it will actually run.
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 from datetime import UTC
 
 from mcp import Client
@@ -290,3 +292,76 @@ async def test_every_call_lands_in_the_trail_with_its_policy_decision(gateway):
         assert event.risk_class, f"{event.tool_name} recorded without a risk class"
         assert event.policy_reason, f"{event.tool_name} recorded without a policy reason"
         assert event.classified_by in ("explicit", "annotation_default", "unclassified")
+
+
+# -- investigation attribution is task-scoped, not global ---------------------
+#
+# Reproduces a real bug found in production: bind_investigation() used to
+# mutate a single AuditLog instance shared by the whole gateway. While an
+# investigation sat waiting for approval, an unrelated call in another task
+# (in production: the console polling /api/incidents every few seconds) got
+# its evidence silently attributed to that investigation. The fix scopes the
+# binding to the asyncio task via a ContextVar.
+
+
+async def test_calls_within_the_bound_task_are_attributed_to_the_investigation(gateway):
+    gateway.bind_investigation(123)
+    await gateway.invoke("itsm_get_incident", {"number": "INC-1042"})
+    gateway.bind_investigation(None)
+
+    with session_scope() as db:
+        event = (
+            db.query(AuditEvent)
+            .filter(AuditEvent.tool_name == "itsm_get_incident")
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert event.investigation_id == 123
+
+
+async def test_a_concurrent_unrelated_call_is_not_attributed_to_a_bound_investigation(gateway):
+    """A call from an unrelated task must not inherit someone else's binding.
+
+    ``context=contextvars.Context()`` gives the spawned task a fresh, empty
+    context with no investigation bound, the same as a brand new incoming
+    request gets from the ASGI server. It does not inherit whatever is
+    currently set in the calling task, which is exactly what a plain
+    ``asyncio.create_task()`` would do and exactly why the original bug held:
+    every real concurrent caller here (the console's own request handlers)
+    already starts this way, so this reproduces the real isolation, not a
+    weaker approximation of it.
+    """
+    gateway.bind_investigation(999)
+
+    async def unrelated_poll() -> None:
+        await gateway.invoke("itsm_search_incidents", {"limit": 5})
+
+    task = asyncio.get_running_loop().create_task(unrelated_poll(), context=contextvars.Context())
+    await task
+    gateway.bind_investigation(None)
+
+    with session_scope() as db:
+        event = (
+            db.query(AuditEvent)
+            .filter(AuditEvent.tool_name == "itsm_search_incidents")
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert event.investigation_id is None, (
+            "an unrelated concurrent call must not inherit another task's investigation binding"
+        )
+
+
+async def test_unbinding_after_an_investigation_stops_further_attribution(gateway):
+    gateway.bind_investigation(55)
+    gateway.bind_investigation(None)
+    await gateway.invoke("itsm_get_incident", {"number": "INC-1042"})
+
+    with session_scope() as db:
+        event = (
+            db.query(AuditEvent)
+            .filter(AuditEvent.tool_name == "itsm_get_incident")
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert event.investigation_id is None

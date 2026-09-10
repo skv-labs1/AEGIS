@@ -14,6 +14,7 @@ enterprise's own agent platform.
 from __future__ import annotations
 
 import argparse
+import contextvars
 import logging
 import os
 from collections.abc import Callable
@@ -96,9 +97,18 @@ class AegisGateway:
         )
         # Tool calls are attributed to the investigation that is running, so the
         # trail can be read back per investigation rather than as one flat log.
-        # This assumes one investigation at a time per gateway, which is what the
-        # console's run queue enforces; a multi-tenant deployment would scope it
-        # to the MCP session instead.
+        # Bound per-task via a ContextVar, not as a mutable field on a shared
+        # AuditLog: this gateway serves many concurrent callers (an engine run,
+        # the console's background polling of /api/incidents, a manual action
+        # from the device page), and a plain instance attribute would let one
+        # of them clobber another's attribution mid-flight, or let an unrelated
+        # background poll get misattributed as evidence for whichever
+        # investigation happened to be running at the time. A ContextVar is
+        # copied into each new asyncio task at creation, so a bound investigation
+        # is visible only within the task tree that bound it.
+        self._investigation_ctx: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+            "aegis_gateway_investigation", default=None
+        )
         self.audit = AuditLog()
         self.server = MCPServer(
             name="aegis",
@@ -267,6 +277,14 @@ class AegisGateway:
         decided on the proposal that authorises this exact call. It skips the
         second approval prompt; it never skips policy, audit or evidence.
         """
+        # Read once, at the top of this call. Safe against everything that can
+        # happen during the awaits below: a ContextVar read inside this task
+        # reflects this task's own binding regardless of what any other
+        # concurrently running task does to its own binding in the meantime.
+        audit = AuditLog(
+            session_id=self.audit.session_id,
+            investigation_id=self._investigation_ctx.get(),
+        )
         tool = self.host.get(qualified_name)
         if tool is None:
             return {
@@ -279,7 +297,7 @@ class AegisGateway:
 
         # 1. Policy refusal ends it here.
         if decision.decision is Decision.DENY:
-            self.audit.record(
+            audit.record(
                 EventType.POLICY_REFUSED,
                 actor=Actor.GATEWAY,
                 tool_name=qualified_name,
@@ -309,7 +327,7 @@ class AegisGateway:
                 rationale="Requested by the connected agent host during an investigation.",
                 expected_effect=decision.expected_effect,
             )
-            self.audit.record(
+            audit.record(
                 EventType.APPROVAL_REQUIRED,
                 actor=Actor.GATEWAY,
                 tool_name=qualified_name,
@@ -321,7 +339,7 @@ class AegisGateway:
             )
             approval = await self.approvals.request(request)
             if not approval.granted:
-                self.audit.record(
+                audit.record(
                     EventType.POLICY_REFUSED,
                     actor=Actor.HUMAN if approval.approver else Actor.GATEWAY,
                     actor_label=approval.approver,
@@ -346,7 +364,7 @@ class AegisGateway:
         # 3. Execute against the enterprise system.
         outcome = await self.host.call(qualified_name, arguments)
 
-        event_id = self.audit.record(
+        event_id = audit.record(
             EventType.TOOL_CALLED if outcome.ok else EventType.TOOL_FAILED,
             actor=Actor.AGENT,
             tool_name=qualified_name,
@@ -368,7 +386,7 @@ class AegisGateway:
             }
 
         # 4. Keep what the agent saw, because the live record will move on.
-        self.audit.capture_evidence(
+        audit.capture_evidence(
             source_system=tool.upstream,
             tool_name=qualified_name,
             payload=outcome.structured,
@@ -603,8 +621,14 @@ class AegisGateway:
         return list(self._registered)
 
     def bind_investigation(self, investigation_id: int | None) -> None:
-        """Attribute subsequent tool calls to this investigation."""
-        self.audit.investigation_id = investigation_id
+        """Attribute subsequent tool calls, in this task, to this investigation.
+
+        Scoped to the calling asyncio task (and any task it spawns), not to the
+        gateway process as a whole. A concurrent unrelated call — the console
+        polling the incident queue, a manual action on a different device — runs
+        in its own task and never sees this binding.
+        """
+        self._investigation_ctx.set(investigation_id)
 
 
 async def build_gateway(
