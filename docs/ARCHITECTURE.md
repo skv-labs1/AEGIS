@@ -1,6 +1,6 @@
 # Aegis — Architecture and Technology Stack Proposal
 
-Status: **Proposal (Phase 0), revision 5.** No application code has been written yet.
+Status: **Revision 5. Phase 1 implemented**; phases 2 onward are still proposal. No application code has been written yet.
 
 Aegis is an **MCP server that governs agentic IT operations**. Any MCP-capable agent host (Claude
 Code, Claude Desktop, or a self-hosted agent loop) connects to Aegis and investigates and remediates
@@ -239,6 +239,21 @@ pending it waits up to a configurable timeout (with MCP progress notifications s
 activity) and returns `pending` if the timeout passes, so the agent can tell the user and stop cleanly.
 Approve or Reject happens in the console, by a persona with the required role, and is written to the
 audit log with the approver identity.
+
+**Verification mechanics, with the numbers Phase 1 actually produces.** For the headline
+device DEV-4411, `clear_disk_space` followed by `restart_application` moves the measured state:
+
+| Measure | Before | After |
+|---|---|---|
+| Health score | 31.7 (critical) | 76.3 (fair) |
+| Disk used | 97.0% | 72.0% |
+| CPU average | 88.0% | 50.4% |
+| Outlook crashes (7d) | 4 | 0 |
+
+The device deliberately does **not** reach "healthy". Software currency, patch compliance and
+a pending reboot remain as scored penalties, so the agent has to recommend the Office update
+as a separate higher-risk action rather than declare the incident fully resolved. An honest
+partial outcome demonstrates the governance model better than a clean sweep would.
 
 **Verification mechanics.** The gateway snapshots device health before executing and again after.
 `verify_remediation` returns both snapshots and the deltas; the agent states a verdict and rationale,

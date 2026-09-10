@@ -1,0 +1,125 @@
+{
+  "_comment": "Synthetic users for the Aegis demo. No real people. Company: Northwind Trading (fictional).",
+  "users": [
+    {
+      "user_id": "USR-1001",
+      "display_name": "Priya Raghavan",
+      "email": "priya.raghavan@northwind.example",
+      "job_title": "Vice President, Finance",
+      "department": "Finance",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1010",
+      "vip": true,
+      "cost_centre": "CC-4100",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1002",
+      "display_name": "Daniel Okafor",
+      "email": "daniel.okafor@northwind.example",
+      "job_title": "Senior Financial Analyst",
+      "department": "Finance",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1001",
+      "vip": false,
+      "cost_centre": "CC-4100",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1003",
+      "display_name": "Mei Lin Chen",
+      "email": "meilin.chen@northwind.example",
+      "job_title": "Director, Enterprise Sales",
+      "department": "Sales",
+      "location": "Vancouver, BC",
+      "manager_id": "USR-1010",
+      "vip": true,
+      "cost_centre": "CC-2200",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1004",
+      "display_name": "Tomas Alvarez",
+      "email": "tomas.alvarez@northwind.example",
+      "job_title": "Field Service Engineer",
+      "department": "Operations",
+      "location": "Calgary, AB",
+      "manager_id": "USR-1008",
+      "vip": false,
+      "cost_centre": "CC-3300",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1005",
+      "display_name": "Aisha Bello",
+      "email": "aisha.bello@northwind.example",
+      "job_title": "HR Business Partner",
+      "department": "People",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1010",
+      "vip": false,
+      "cost_centre": "CC-5500",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1006",
+      "display_name": "Jonas Weber",
+      "email": "jonas.weber@northwind.example",
+      "job_title": "Senior Software Engineer",
+      "department": "Technology",
+      "location": "Remote (Berlin, DE)",
+      "manager_id": "USR-1009",
+      "vip": false,
+      "cost_centre": "CC-6600",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1007",
+      "display_name": "Sofia Rossi",
+      "email": "sofia.rossi@northwind.example",
+      "job_title": "Customer Support Team Lead",
+      "department": "Customer Success",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1008",
+      "vip": false,
+      "cost_centre": "CC-7700",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1008",
+      "display_name": "Marcus Hall",
+      "email": "marcus.hall@northwind.example",
+      "job_title": "Operations Manager",
+      "department": "Operations",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1010",
+      "vip": false,
+      "cost_centre": "CC-3300",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1009",
+      "display_name": "Rebecca Lindqvist",
+      "email": "rebecca.lindqvist@northwind.example",
+      "job_title": "Director, IT Service Delivery",
+      "department": "Technology",
+      "location": "Toronto, ON",
+      "manager_id": "USR-1010",
+      "vip": false,
+      "cost_centre": "CC-6600",
+      "employment_type": "full_time"
+    },
+    {
+      "user_id": "USR-1010",
+      "display_name": "Helena Vasquez",
+      "email": "helena.vasquez@northwind.example",
+      "job_title": "Chief Operating Officer",
+      "department": "Executive",
+      "location": "Toronto, ON",
+      "manager_id": null,
+      "vip": true,
+      "cost_centre": "CC-1000",
+      "employment_type": "full_time"
+    }
+  ]
+}

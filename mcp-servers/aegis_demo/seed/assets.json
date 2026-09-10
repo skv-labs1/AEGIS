@@ -1,0 +1,116 @@
+{
+  "_comment": "Synthetic ITAM asset records. Dates are relative offsets in days, resolved at seed time so the demo always looks current.",
+  "assets": [
+    {
+      "asset_tag": "AST-90411", "device_id": "DEV-4411", "assigned_user_id": "USR-1001",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad X1 Carbon Gen 10", "serial_number": "PF3XK92R",
+      "purchase_days_ago": 1042, "purchase_cost": 2489.00, "currency": "CAD",
+      "warranty_expires_in_days": -47, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_use", "refresh_due_in_days": -47,
+      "cost_centre": "CC-4100", "location": "Toronto, ON",
+      "notes": "Past standard 36-month refresh cycle. Flagged for replacement in FY refresh plan."
+    },
+    {
+      "asset_tag": "AST-90412", "device_id": "DEV-4412", "assigned_user_id": "USR-1002",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad T14 Gen 3", "serial_number": "PF3XK71M",
+      "purchase_days_ago": 402, "purchase_cost": 1789.00, "currency": "CAD",
+      "warranty_expires_in_days": 693, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 693,
+      "cost_centre": "CC-4100", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-90415", "device_id": "DEV-4415", "assigned_user_id": "USR-1003",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Apple", "model": "MacBook Pro 14-inch M3", "serial_number": "PG8QW14T",
+      "purchase_days_ago": 288, "purchase_cost": 3299.00, "currency": "CAD",
+      "warranty_expires_in_days": 807, "warranty_provider": "AppleCare for Enterprise",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 807,
+      "cost_centre": "CC-2200", "location": "Vancouver, BC", "notes": null
+    },
+    {
+      "asset_tag": "AST-90418", "device_id": "DEV-4418", "assigned_user_id": "USR-1004",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Dell", "model": "Latitude 5430 Rugged", "serial_number": "PH2LM55D",
+      "purchase_days_ago": 611, "purchase_cost": 2950.00, "currency": "CAD",
+      "warranty_expires_in_days": 484, "warranty_provider": "Dell ProSupport Plus",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 484,
+      "cost_centre": "CC-3300", "location": "Calgary, AB",
+      "notes": "ProSupport Plus includes next-business-day onsite parts replacement."
+    },
+    {
+      "asset_tag": "AST-90421", "device_id": "DEV-4421", "assigned_user_id": "USR-1005",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad T14 Gen 3", "serial_number": "PF9RT38K",
+      "purchase_days_ago": 455, "purchase_cost": 1789.00, "currency": "CAD",
+      "warranty_expires_in_days": 640, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 640,
+      "cost_centre": "CC-5500", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-90425", "device_id": "DEV-4425", "assigned_user_id": "USR-1006",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Dell", "model": "XPS 15 9520", "serial_number": "PK4NB77X",
+      "purchase_days_ago": 520, "purchase_cost": 3150.00, "currency": "CAD",
+      "warranty_expires_in_days": 575, "warranty_provider": "Dell ProSupport",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 575,
+      "cost_centre": "CC-6600", "location": "Remote (Berlin, DE)", "notes": null
+    },
+    {
+      "asset_tag": "AST-90429", "device_id": "DEV-4429", "assigned_user_id": "USR-1007",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad L14 Gen 2", "serial_number": "PF1ZC24H",
+      "purchase_days_ago": 878, "purchase_cost": 1450.00, "currency": "CAD",
+      "warranty_expires_in_days": 217, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 217,
+      "cost_centre": "CC-7700", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-90433", "device_id": "DEV-4433", "assigned_user_id": "USR-1008",
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad T14 Gen 3", "serial_number": "PF7YD61B",
+      "purchase_days_ago": 366, "purchase_cost": 1789.00, "currency": "CAD",
+      "warranty_expires_in_days": 729, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 729,
+      "cost_centre": "CC-3300", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-70112", "device_id": null, "assigned_user_id": "USR-1001",
+      "category": "End User Compute", "subcategory": "Monitor",
+      "manufacturer": "Dell", "model": "UltraSharp U2723QE", "serial_number": "MN44821P",
+      "purchase_days_ago": 1042, "purchase_cost": 749.00, "currency": "CAD",
+      "warranty_expires_in_days": 51, "warranty_provider": "Dell Advanced Exchange",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 51,
+      "cost_centre": "CC-4100", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-70118", "device_id": null, "assigned_user_id": "USR-1001",
+      "category": "Mobile", "subcategory": "Smartphone",
+      "manufacturer": "Apple", "model": "iPhone 14 Pro", "serial_number": "IP7723KLM",
+      "purchase_days_ago": 690, "purchase_cost": 1499.00, "currency": "CAD",
+      "warranty_expires_in_days": 40, "warranty_provider": "AppleCare for Enterprise",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 405,
+      "cost_centre": "CC-4100", "location": "Toronto, ON", "notes": null
+    },
+    {
+      "asset_tag": "AST-70125", "device_id": null, "assigned_user_id": "USR-1004",
+      "category": "End User Compute", "subcategory": "Docking Station",
+      "manufacturer": "Dell", "model": "WD19S Dock", "serial_number": "DK9910TT",
+      "purchase_days_ago": 611, "purchase_cost": 329.00, "currency": "CAD",
+      "warranty_expires_in_days": 484, "warranty_provider": "Dell ProSupport",
+      "lifecycle_state": "in_use", "refresh_due_in_days": 484,
+      "cost_centre": "CC-3300", "location": "Calgary, AB", "notes": null
+    },
+    {
+      "asset_tag": "AST-90440", "device_id": null, "assigned_user_id": null,
+      "category": "End User Compute", "subcategory": "Laptop",
+      "manufacturer": "Lenovo", "model": "ThinkPad X1 Carbon Gen 12", "serial_number": "PF8MN03V",
+      "purchase_days_ago": 22, "purchase_cost": 2699.00, "currency": "CAD",
+      "warranty_expires_in_days": 1073, "warranty_provider": "Lenovo Premier Support",
+      "lifecycle_state": "in_stock", "refresh_due_in_days": 1073,
+      "cost_centre": "CC-6600", "location": "Toronto, ON - IT Stockroom",
+      "notes": "Spare pool. Available for executive refresh or emergency replacement."
+    }
+  ]
+}

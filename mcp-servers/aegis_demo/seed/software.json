@@ -1,0 +1,79 @@
+{
+  "_comment": "Synthetic software inventory. 'known_issues' let the agent connect an outdated version to the reported symptom.",
+  "software": [
+    {
+      "device_id": "DEV-4411",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.14332.20481", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 1198, "is_outdated": true, "is_business_critical": true,
+         "known_issues": [
+           {"issue_id": "KB5002641", "title": "Outlook may crash when the local data file exceeds available disk space", "affects_versions_below": "16.0.16130.20218", "symptom": "OUTLOOK.EXE terminates unexpectedly during send/receive", "fixed_in": "16.0.16130.20218"},
+           {"issue_id": "KB5002598", "title": "Excel intermittent failure to save to network locations", "affects_versions_below": "16.0.15601.20148", "symptom": "EXCEL.EXE stops responding on save", "fixed_in": "16.0.15601.20148"}
+         ]},
+        {"name": "Google Chrome", "publisher": "Google", "installed_version": "123.0.6312.106", "latest_available_version": "123.0.6312.106", "update_channel": "Stable", "release_age_days": 12, "is_outdated": false, "is_business_critical": false, "known_issues": []},
+        {"name": "Microsoft Teams", "publisher": "Microsoft", "installed_version": "24074.2705.2874.5567", "latest_available_version": "24074.2705.2874.5567", "update_channel": "Current", "release_age_days": 9, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Adobe Acrobat Reader", "publisher": "Adobe", "installed_version": "24.001.20629", "latest_available_version": "24.001.20629", "update_channel": "Continuous", "release_age_days": 20, "is_outdated": false, "is_business_critical": false, "known_issues": []},
+        {"name": "SAP GUI for Windows", "publisher": "SAP", "installed_version": "7.70 PL12", "latest_available_version": "7.70 PL14", "update_channel": "Managed", "release_age_days": 340, "is_outdated": true, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind Endpoint Protection", "publisher": "Northwind IT", "installed_version": "5.2.9", "latest_available_version": "5.2.9", "update_channel": "Managed", "release_age_days": 15, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4412",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.17928.20156", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 34, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Google Chrome", "publisher": "Google", "installed_version": "123.0.6312.106", "latest_available_version": "123.0.6312.106", "update_channel": "Stable", "release_age_days": 12, "is_outdated": false, "is_business_critical": false, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4415",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.83.0", "latest_available_version": "16.83.0", "update_channel": "Current", "release_age_days": 18, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Salesforce CLI", "publisher": "Salesforce", "installed_version": "2.35.6", "latest_available_version": "2.36.1", "update_channel": "Stable", "release_age_days": 44, "is_outdated": true, "is_business_critical": false, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4418",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.17928.20156", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 34, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind Field Service App", "publisher": "Northwind IT", "installed_version": "3.1.0", "latest_available_version": "3.1.0", "update_channel": "Managed", "release_age_days": 27, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4421",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.17928.20156", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 34, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Microsoft Teams", "publisher": "Microsoft", "installed_version": "24074.2705.2874.5567", "latest_available_version": "24074.2705.2874.5567", "update_channel": "Current", "release_age_days": 9, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind HR Portal Desktop", "publisher": "Northwind IT", "installed_version": "2.4.1", "latest_available_version": "2.4.1", "update_channel": "Managed", "release_age_days": 51, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4425",
+      "installed": [
+        {"name": "Visual Studio Code", "publisher": "Microsoft", "installed_version": "1.88.1", "latest_available_version": "1.88.1", "update_channel": "Stable", "release_age_days": 7, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Docker Engine", "publisher": "Docker Inc", "installed_version": "26.0.0", "latest_available_version": "26.0.0", "update_channel": "Stable", "release_age_days": 16, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4429",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.17928.20156", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 34, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "6.8.4", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 596, "is_outdated": true, "is_business_critical": true,
+         "known_issues": [
+           {"issue_id": "NW-VPN-221", "title": "VPN tunnel drops after gateway TLS 1.3 enforcement", "affects_versions_below": "7.0.0", "symptom": "NWVPN.EXE disconnects every 15-40 minutes after gateway upgrade", "fixed_in": "7.0.0"}
+         ]},
+        {"name": "Northwind Support Console", "publisher": "Northwind IT", "installed_version": "4.0.2", "latest_available_version": "4.0.2", "update_channel": "Managed", "release_age_days": 30, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    },
+    {
+      "device_id": "DEV-4433",
+      "installed": [
+        {"name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "installed_version": "16.0.17928.20156", "latest_available_version": "16.0.17928.20156", "update_channel": "Semi-Annual Enterprise", "release_age_days": 34, "is_outdated": false, "is_business_critical": true, "known_issues": []},
+        {"name": "Northwind VPN Client", "publisher": "Northwind IT", "installed_version": "7.4.2", "latest_available_version": "7.4.2", "update_channel": "Managed", "release_age_days": 61, "is_outdated": false, "is_business_critical": true, "known_issues": []}
+      ]
+    }
+  ]
+}

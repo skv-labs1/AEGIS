@@ -1,0 +1,44 @@
+{
+  "_comment": "Synthetic patch management records. 'reboot_required' plus days_since_reboot is the signal for the pending-reboot scenario.",
+  "patches": [
+    {
+      "device_id": "DEV-4411",
+      "last_scan_hours_ago": 6,
+      "missing": [
+        {"patch_id": "KB5036893", "title": "2024-04 Cumulative Update for Windows 11 Version 23H2", "severity": "critical", "classification": "Security Update", "released_days_ago": 34, "reboot_required": true, "install_state": "download_failed", "failure_reason": "0x80070070 - insufficient disk space"},
+        {"patch_id": "KB5037591", "title": "Servicing Stack Update for Windows 11 Version 23H2", "severity": "critical", "classification": "Security Update", "released_days_ago": 34, "reboot_required": true, "install_state": "download_failed", "failure_reason": "0x80070070 - insufficient disk space"},
+        {"patch_id": "KB5036620", "title": "2024-03 .NET Framework Cumulative Update", "severity": "important", "classification": "Security Update", "released_days_ago": 62, "reboot_required": false, "install_state": "download_failed", "failure_reason": "0x80070070 - insufficient disk space"}
+      ],
+      "installed_recent": [
+        {"patch_id": "KB5034765", "title": "2024-02 Cumulative Update for Windows 11 Version 23H2", "installed_days_ago": 71, "severity": "critical"}
+      ]
+    },
+    {
+      "device_id": "DEV-4412", "last_scan_hours_ago": 8, "missing": [],
+      "installed_recent": [{"patch_id": "KB5036893", "title": "2024-04 Cumulative Update for Windows 11 Version 23H2", "installed_days_ago": 12, "severity": "critical"}]
+    },
+    {
+      "device_id": "DEV-4415", "last_scan_hours_ago": 14, "missing": [],
+      "installed_recent": [{"patch_id": "macOS-14.4.1", "title": "macOS Sonoma 14.4.1 Security Update", "installed_days_ago": 9, "severity": "critical"}]
+    },
+    {
+      "device_id": "DEV-4418", "last_scan_hours_ago": 31,
+      "missing": [{"patch_id": "KB5036894", "title": "2024-04 Cumulative Update for Windows 11 Version 22H2", "severity": "critical", "classification": "Security Update", "released_days_ago": 34, "reboot_required": true, "install_state": "pending_install", "failure_reason": null}],
+      "installed_recent": [{"patch_id": "KB5034766", "title": "2024-02 Cumulative Update for Windows 11 Version 22H2", "installed_days_ago": 69, "severity": "critical"}]
+    },
+    {
+      "device_id": "DEV-4421", "last_scan_hours_ago": 5,
+      "missing": [
+        {"patch_id": "KB5036893", "title": "2024-04 Cumulative Update for Windows 11 Version 23H2", "severity": "critical", "classification": "Security Update", "released_days_ago": 34, "reboot_required": true, "install_state": "installed_pending_reboot", "failure_reason": null},
+        {"patch_id": "KB5037591", "title": "Servicing Stack Update for Windows 11 Version 23H2", "severity": "critical", "classification": "Security Update", "released_days_ago": 34, "reboot_required": true, "install_state": "installed_pending_reboot", "failure_reason": null}
+      ],
+      "installed_recent": [{"patch_id": "KB5034765", "title": "2024-02 Cumulative Update for Windows 11 Version 23H2", "installed_days_ago": 70, "severity": "critical"}]
+    },
+    {"device_id": "DEV-4425", "last_scan_hours_ago": 3, "missing": [], "installed_recent": [{"patch_id": "USN-6712-1", "title": "Linux kernel security update", "installed_days_ago": 11, "severity": "critical"}]},
+    {
+      "device_id": "DEV-4429", "last_scan_hours_ago": 9, "missing": [],
+      "installed_recent": [{"patch_id": "KB5036894", "title": "2024-04 Cumulative Update for Windows 11 Version 22H2", "installed_days_ago": 14, "severity": "critical"}]
+    },
+    {"device_id": "DEV-4433", "last_scan_hours_ago": 4, "missing": [], "installed_recent": [{"patch_id": "KB5036893", "title": "2024-04 Cumulative Update for Windows 11 Version 23H2", "installed_days_ago": 13, "severity": "critical"}]}
+  ]
+}
