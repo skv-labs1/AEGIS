@@ -101,6 +101,7 @@ class LLMProvider(Protocol):
 
     name: str
     model: str
+    ready: bool
 
     async def complete(
         self,

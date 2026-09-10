@@ -53,6 +53,11 @@ class GeminiProvider:
         self._timeout = timeout
 
     @property
+    def ready(self) -> bool:
+        """Usable right now. A configured provider with no key is not."""
+        return bool(os.environ.get(self._api_key_env))
+
+    @property
     def api_key(self) -> str:
         key = os.environ.get(self._api_key_env)
         if not key:

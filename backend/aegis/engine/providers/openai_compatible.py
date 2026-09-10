@@ -50,6 +50,11 @@ class OpenAICompatibleProvider:
         self._timeout = timeout
 
     @property
+    def ready(self) -> bool:
+        """Usable right now. A local endpoint needs no key; a hosted one does."""
+        return not self._api_key_env or bool(os.environ.get(self._api_key_env))
+
+    @property
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._api_key_env:

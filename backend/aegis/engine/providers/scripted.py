@@ -25,6 +25,8 @@ class ScriptedProvider:
 
     name = "scripted"
 
+    ready = True
+
     def __init__(self, steps: list[Step], *, model: str = "scripted-1") -> None:
         self.model = model
         self._steps = list(steps)
@@ -77,6 +79,8 @@ class ScriptedProvider:
 
 class AlwaysFailingProvider:
     """Fails every call. Used to prove the fallback chain actually falls back."""
+
+    ready = True
 
     def __init__(self, name: str = "broken", *, error: Exception | None = None) -> None:
         self.name = name

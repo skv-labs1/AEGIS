@@ -16,34 +16,45 @@ Incident → Investigation → Evidence → Diagnosis → Recommendation → App
 
 ## Status
 
-**Phase 3 complete: the governed workflow runs end to end.** Aegis connects to three demo
-enterprise systems, publishes their read tools namespaced, and holds every device-changing
-action behind a proposal that a named human approves. The investigation state machine is
-enforced, verification is measured against before and after snapshots, and the whole run
-lands in an append-only audit trail. 94 tests pass across both packages.
+**Phase 5 complete: the console runs the whole thing.** Aegis governs three demo enterprise
+systems, holds every device-changing action behind a proposal a named human approves,
+verifies remediation against before and after measurements, and shows all of it live in an
+operations console. A built-in engine can drive investigations on a free-tier model, and any
+MCP host such as Claude Code can drive them instead. 123 tests pass across both packages.
 
-Phases 4 onward (the built-in agent engine, the console, evaluation) are still proposal. Read
+Phases 6 onward (replay mode, evaluation, deployment) are still proposal. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) for the tool contract.
 
 ## Quick start
 
 ```bash
-make install   # two virtualenvs: the demo systems and the gateway
-make stack     # start the demo systems and the gateway in the background
-make test      # 70 tests across both packages
+make install   # Python venvs and the console build
+make demo      # everything, in the background
+make test      # 123 tests across both packages
 make stop
 ```
 
-The gateway serves MCP at `http://127.0.0.1:8800/mcp`. The demo enterprise systems sit
-behind it on ports 8801 to 8803 and are not meant to be reached directly by an agent.
+Then open **http://127.0.0.1:8000**.
 
-### Attaching an agent
+The console, the API and the MCP gateway are one process on port 8000. The demo enterprise
+systems sit behind the gateway on ports 8801 to 8803 and are not meant to be reached
+directly by an agent.
 
-`.mcp.json` in the repo root already points Claude Code at the gateway, so `make stack`
-followed by starting Claude Code in this directory is enough to investigate INC-1042
-through governed tools. Any MCP host works, including MCP Inspector
-(`npx @modelcontextprotocol/inspector`).
+### Driving an investigation
+
+Three ways, all governed identically:
+
+1. **From the console.** Open an incident and press *Start AI investigation*. This needs the
+   built-in engine, so set `GEMINI_API_KEY` or `GROQ_API_KEY` first.
+2. **From Claude Code.** `.mcp.json` already points at `http://127.0.0.1:8000/mcp`, so
+   starting Claude Code in this directory gives it the governed tools. The console shows the
+   run live either way, because the live view is a tail of the audit trail.
+3. **By hand.** The device page has a *Run an action* panel that raises the same kind of
+   proposal a person must approve.
+
+Approvals appear in the console. `make pending` and `make approve ID=1 WHO="Your Name"` do
+the same thing from a terminal.
 
 When the agent proposes a remediation, its call blocks until a person decides. Answer it
 from a second terminal:

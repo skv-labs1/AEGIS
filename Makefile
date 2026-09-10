@@ -6,16 +6,27 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install seed demo-systems gateway stack stop test test-demo test-gateway \
-        lint fmt clean pending audit investigations inspector investigate check-providers approve reject
+        lint fmt clean pending audit investigations inspector investigate check-providers \
+        approve reject demo console console-dev build-console
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install:  ## Create both virtualenvs and install everything
+install:  ## Install everything: both Python venvs and the console
 	cd mcp-servers && uv venv --python 3.11 .venv && uv pip install -e ".[dev]"
 	cd backend && uv venv --python 3.11 .venv && uv pip install -e ".[dev]" \
 		&& uv pip install -e ../mcp-servers
+	cd frontend && npm install && npm run build
+
+build-console:  ## Rebuild the console after a frontend change
+	cd frontend && npm run build
+
+console:  ## Run the console and gateway in one process (port 8000)
+	cd backend && .venv/bin/python -m uvicorn aegis.api.app:app --port 8000
+
+console-dev:  ## Frontend dev server with hot reload (needs `make demo` running)
+	cd frontend && npm run dev
 
 seed:  ## Rebuild enterprise_demo.db from the JSON seed files
 	cd mcp-servers && .venv/bin/python -m aegis_demo.common.seed
@@ -26,22 +37,32 @@ demo-systems:  ## Run the ITSM, ITAM and endpoint MCP servers (ports 8801-8803)
 gateway:  ## Run the Aegis gateway (port 8800). Needs demo-systems running.
 	cd backend && .venv/bin/python -m aegis.gateway.server --port 8800
 
-stack:  ## Run the demo systems and the gateway together, in the background
+demo:  ## Start everything in the background: demo systems + console + gateway
+	@cd mcp-servers && (.venv/bin/python -m aegis_demo.run_all --reseed \
+		> /tmp/aegis-demo.log 2>&1 &)
+	@sleep 6
+	@cd backend && (.venv/bin/python -m uvicorn aegis.api.app:app --port 8000 \
+		> /tmp/aegis-console.log 2>&1 &)
+	@sleep 7
+	@echo ""
+	@echo "  Console         http://127.0.0.1:8000"
+	@echo "  MCP gateway     http://127.0.0.1:8000/mcp   (.mcp.json points here)"
+	@echo "  Approvals       in the console, or: make pending && make approve ID=1 WHO='You'"
+	@echo "  Logs            /tmp/aegis-console.log  /tmp/aegis-demo.log"
+	@echo "  Stop            make stop"
+	@echo ""
+
+stack:  ## Demo systems + a standalone gateway on 8800, without the console
 	@cd mcp-servers && (.venv/bin/python -m aegis_demo.run_all --reseed \
 		> /tmp/aegis-demo.log 2>&1 &)
 	@sleep 6
 	@cd backend && (.venv/bin/python -m aegis.gateway.server --port 8800 \
 		> /tmp/aegis-gateway.log 2>&1 &)
 	@sleep 5
-	@echo ""
 	@echo "  Aegis gateway   http://127.0.0.1:8800/mcp"
-	@echo "  Claude Code     .mcp.json already points at it"
-	@echo "  Approvals       make pending, then make approve ID=1 WHO='Your Name'"
-	@echo "  Logs            /tmp/aegis-gateway.log  /tmp/aegis-demo.log"
-	@echo "  Stop            make stop"
-	@echo ""
 
-stop:  ## Stop everything started by `make stack`
+stop:  ## Stop everything started by `make demo` or `make stack`
+	@pkill -f "uvicorn aegis" 2>/dev/null || true
 	@pkill -f "aegis.gateway.server" 2>/dev/null || true
 	@pkill -f "aegis_demo" 2>/dev/null || true
 	@echo "stopped"

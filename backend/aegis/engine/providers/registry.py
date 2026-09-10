@@ -71,6 +71,15 @@ class ProviderChain:
     def names(self) -> list[str]:
         return [p.name for p in self.providers]
 
+    @property
+    def ready_names(self) -> list[str]:
+        """Providers that have what they need to run, usually an API key."""
+        return [p.name for p in self.providers if getattr(p, "ready", True)]
+
+    @property
+    def usable(self) -> bool:
+        return bool(self.ready_names)
+
     def select(self, name: str) -> ProviderChain:
         """A chain that starts from a named provider, for a per-run override."""
         ordered = [p for p in self.providers if p.name == name]

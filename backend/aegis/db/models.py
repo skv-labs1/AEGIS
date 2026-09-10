@@ -250,8 +250,14 @@ class Proposal(Base):
     __tablename__ = "proposals"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    investigation_id: Mapped[int] = mapped_column(ForeignKey("investigations.id"), index=True)
+    # Null for an action a person raised directly from the console. Manual
+    # actions go through the same policy, approval and audit path as the agent's,
+    # which is the point: the gateway governs people and agents alike.
+    investigation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("investigations.id"), index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    raised_by: Mapped[str] = mapped_column(String(120), default="agent")
 
     action: Mapped[str] = mapped_column(String(120))
     arguments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -280,7 +286,7 @@ class Proposal(Base):
     state_before: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     state_after: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    investigation: Mapped[Investigation] = relationship(back_populates="proposals")
+    investigation: Mapped[Investigation | None] = relationship(back_populates="proposals")
     verification: Mapped[Verification | None] = relationship(
         back_populates="proposal", uselist=False
     )
@@ -288,6 +294,8 @@ class Proposal(Base):
     def as_dict(self) -> dict[str, Any]:
         return {
             "proposal_id": self.id,
+            "investigation_id": self.investigation_id,
+            "raised_by": self.raised_by,
             "action": self.action,
             "arguments": self.arguments,
             "rationale": self.rationale,
