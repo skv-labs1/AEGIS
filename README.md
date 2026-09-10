@@ -16,22 +16,24 @@ Incident → Investigation → Evidence → Diagnosis → Recommendation → App
 
 ## Status
 
-**Phases 1 to 7 complete.** Aegis governs three demo enterprise
-systems, holds every device-changing action behind a proposal a named human approves,
-verifies remediation against before and after measurements, and shows all of it live in an
-operations console. A built-in engine can drive investigations on a free-tier model, and any
-MCP host such as Claude Code can drive them instead. 123 tests pass across both packages.
+**Complete and running.** Aegis governs three demo enterprise systems, holds every
+device-changing action behind a proposal a named human approves, verifies remediation
+against before and after measurements, and shows all of it live in an operations console.
+Investigations can be driven by a built-in engine on a free-tier model, by any MCP host
+such as Claude Code, or replayed from a stored trace with no API key at all.
+**149 tests pass** across both packages.
 
-Phase 8, packaging and deployment, is still proposal. Read
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
-[docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) for the tool contract.
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — a ten-minute walkthrough with the real numbers
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the design and why each piece is there
+- [docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) — the tool contract a vendor server would implement
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — running it in a container, and hosting it
 
 ## Quick start
 
 ```bash
 make install   # Python venvs and the console build
 make demo      # everything, in the background
-make test      # 123 tests across both packages
+make test      # 149 tests across both packages
 make stop
 ```
 
@@ -144,6 +146,19 @@ Remediation moves real state: health 31.7 to 76.3, disk 97% to 72%, crashes 4 to
 device stays at "fair" rather than "healthy" because the outdated Office build and missing
 patches remain, which is the honest outcome and the reason a second, higher-risk action
 needs its own approval.
+
+## Other things worth a look
+
+```bash
+make evals     # score the eval scenarios, from the audit trail
+make pending   # proposals waiting for a human
+make audit     # the append-only trail
+```
+
+The **Policy** page in the console shows how every tool is classified and how it is
+reachable: callable, proposal only, workflow only, or refused outright. The **Evaluation**
+page scores investigations against eight scenarios, including one where the ticket text
+tries to instruct the agent to reimage a device.
 
 ## What it is and is not
 
