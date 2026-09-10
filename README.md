@@ -16,12 +16,13 @@ Incident → Investigation → Evidence → Diagnosis → Recommendation → App
 
 ## Status
 
-**Phase 2 complete: the governance gateway runs.** Aegis connects to three demo enterprise
-systems, re-publishes their tools under its own namespace, and puts every call through
-policy, an approval gate, an audit trail and evidence capture. 70 tests pass across both
-packages.
+**Phase 3 complete: the governed workflow runs end to end.** Aegis connects to three demo
+enterprise systems, publishes their read tools namespaced, and holds every device-changing
+action behind a proposal that a named human approves. The investigation state machine is
+enforced, verification is measured against before and after snapshots, and the whole run
+lands in an append-only audit trail. 94 tests pass across both packages.
 
-Phases 3 onward (the agent engine, the console, evaluation) are still proposal. Read
+Phases 4 onward (the built-in agent engine, the console, evaluation) are still proposal. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) for the tool contract.
 
@@ -44,17 +45,57 @@ followed by starting Claude Code in this directory is enough to investigate INC-
 through governed tools. Any MCP host works, including MCP Inspector
 (`npx @modelcontextprotocol/inspector`).
 
-Note that with no approval channel attached, every write is refused by design. Approvals
-arrive with the console in a later phase.
+When the agent proposes a remediation, its call blocks until a person decides. Answer it
+from a second terminal:
+
+```bash
+make pending
+make approve ID=1 WHO="Your Name" NOTE="approved during the change window"
+```
+
+`make audit` prints the trail afterwards.
 
 ## What the gateway does
 
 ```text
 agent host ──MCP──▶ Aegis gateway ──MCP──▶ itsm | itam | endpoint
                     │
-                    policy check → approval gate → audit → call → evidence
+                    state machine → policy → approval gate → audit → call → evidence
 ```
 
+A live run, with the numbers the demo actually produces:
+
+```text
+investigation 1  state=investigating
+device DEV-4411  health 31.7 (critical)
+
+propose before diagnosing →  refused: "Record a diagnosis first: a remediation
+                             must follow from a stated root cause."
+diagnosis recorded
+proposing ... blocks until a human decides
+approved by Rebecca Lindqvist (it_admin)
+executed: reclaimed 128.0 GB
+
+verification: agent=resolved  measured=resolved  agreed=True
+   health_score              31.7 -> 68.3
+   telemetry.disk_used_pct   97.0 -> 72.0
+   telemetry.cpu_avg_pct     88.0 -> 50.4
+   band                      critical -> degraded
+
+resolved as Solved (Workaround); incident updated
+```
+
+- **The workflow is enforced, not requested.** An investigation moves
+  `investigating → diagnosed → proposed → awaiting approval → approved → executed →
+  verified → resolved`, and every operation checks the recorded state first. Asking to
+  propose a fix before recording a diagnosis returns an error saying what is missing.
+- **Device-changing actions are not callable.** They exist only as proposals. The agent sees
+  what they do and what arguments they take through `list_remediation_actions`, but the only
+  path to running one is a proposal a named human approved.
+- **Verification is measured.** Aegis snapshots device health before and after and compares
+  the agent's verdict against the numbers. An agent claiming a better outcome than the
+  measurements support has the discrepancy recorded and cannot resolve the incident as fixed.
+  Being more cautious than the numbers is recorded but not penalised.
 - **Tools are namespaced by source system**, so `get_incident` becomes `itsm_get_incident`
   and two systems cannot collide.
 - **Denied actions are never published.** `endpoint_reimage_device` exists upstream and the

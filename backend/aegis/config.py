@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # How long to wait on an upstream system before giving up.
     upstream_timeout_seconds: float = 20.0
 
+    # How long a proposal waits for a human before it expires. A timeout is not
+    # approval: the action simply does not run.
+    approval_timeout_seconds: float = 300.0
+
     # Redaction and evidence retention are enforced when real data is connected.
     evidence_retention_days: int = 90
 

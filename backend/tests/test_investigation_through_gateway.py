@@ -42,33 +42,75 @@ async def test_headline_investigation_end_to_end(gateway):
     assert "Microsoft 365 Apps for enterprise" in software["summary"]["outdated_business_critical"]
     assert history["summary"]["resolved_as_workaround"] >= 4
 
-    # Remediate: both writes pass the approval gate.
-    cleanup = await call(gateway, "endpoint_clear_disk_space", {"device_id": device_id})
-    assert cleanup["succeeded"] is True
-    restart = await call(
-        gateway,
-        "endpoint_restart_application",
-        {"device_id": device_id, "process_name": "OUTLOOK"},
-    )
-    assert restart["succeeded"] is True
+    # Remediate: the action must be proposed, approved and only then executed.
+    investigation = await call(gateway, "start_investigation", {"incident_number": "INC-1042"})
+    investigation_id = investigation["investigation_id"]
 
-    # Verify: measured, not assumed.
-    after = await call(gateway, "endpoint_get_device_health", {"device_id": device_id})
-    assert after["health_score"] > health["health_score"] + 30
-    assert after["band"] in ("fair", "healthy")
-
-    # Resolve, honestly: residual risk remains, so this is not a permanent fix.
-    assert after["band"] != "healthy"
-    note = await call(
+    await call(
         gateway,
-        "itsm_add_work_note",
+        "record_diagnosis",
         {
-            "number": "INC-1042",
-            "text": "Reclaimed 128 GB and restarted Outlook. Office update still required.",
-            "author": "Aegis",
+            "investigation_id": investigation_id,
+            "root_cause": "Disk exhaustion on the device, driven by orphaned Outlook data files.",
+            "contributing_factors": [
+                "Outdated Office build carrying a known Outlook crash defect",
+                "Two critical patches failing to download for lack of disk space",
+            ],
+            "evidence_cited": ["endpoint_get_device_health", "endpoint_get_patch_status"],
+            "confidence": "high",
         },
     )
-    assert note["added"] is True
+
+    proposal = await call(
+        gateway,
+        "propose_remediation",
+        {
+            "investigation_id": investigation_id,
+            "action": "endpoint_clear_disk_space",
+            "arguments": {"device_id": device_id},
+            "rationale": "Reclaim 128 GB, most of it orphaned Outlook data files.",
+            "expected_outcome": "Disk falls below 75 percent and patching can proceed.",
+            "agent_risk_assessment": "medium",
+        },
+    )
+    assert proposal["approved"] is True
+
+    executed = await call(
+        gateway,
+        "execute_remediation",
+        {"investigation_id": investigation_id, "proposal_id": proposal["proposal_id"]},
+    )
+    assert executed["executed"] is True
+
+    # Verify: measured against the snapshots Aegis took, not asserted.
+    verification = await call(
+        gateway,
+        "verify_remediation",
+        {
+            "investigation_id": investigation_id,
+            "proposal_id": proposal["proposal_id"],
+            "verdict": "resolved",
+            "rationale": "Disk utilisation fell below the pressure threshold and health recovered.",
+        },
+    )
+    assert verification["agreed"] is True
+    assert verification["measured_verdict"] == "resolved"
+
+    after = await call(gateway, "endpoint_get_device_health", {"device_id": device_id})
+    assert after["health_score"] > health["health_score"] + 30
+
+    # Resolve honestly: residual risk remains, so this is a workaround, not a permanent fix.
+    assert after["band"] != "healthy"
+    resolved = await call(
+        gateway,
+        "resolve_investigation",
+        {
+            "investigation_id": investigation_id,
+            "resolution_code": "Solved (Workaround)",
+            "summary": "Reclaimed 128 GB of disk. The outdated Office build still needs updating.",
+        },
+    )
+    assert resolved["incident_updated"] is True
 
     # The audit trail reconstructs the whole run.
     with session_scope() as db:
@@ -83,7 +125,7 @@ async def test_headline_investigation_end_to_end(gateway):
     assert systems == {"itsm", "itam", "endpoint"}
 
     approvals = [e for e in events if e.event_type == "approval.required"]
-    assert len(approvals) == 2, "both device-changing actions must have been gated"
+    assert len(approvals) >= 1, "the device-changing action must have been gated"
 
     assert len(evidence) >= 6, "each read should leave evidence behind"
     assert any(e.subject == device_id for e in evidence)

@@ -178,6 +178,168 @@ class Evidence(Base):
         }
 
 
+class Investigation(Base):
+    """One governed run against one incident.
+
+    The state column is the workflow's memory. It is what stops a remediation
+    being executed before it was approved, or an incident being resolved as
+    fixed before verification agreed.
+    """
+
+    __tablename__ = "investigations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    incident_number: Mapped[str] = mapped_column(String(40), index=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("gateway_sessions.id"), nullable=True)
+    state: Mapped[str] = mapped_column(String(30), default="opened", index=True)
+
+    subject_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    subject_device_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # The diagnosis, recorded as structured data rather than prose so the
+    # console and the eval harness can both read it.
+    root_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contributing_factors: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    evidence_cited: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    diagnosis_confidence: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    diagnosed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    resolution_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    resolution_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    proposals: Mapped[list[Proposal]] = relationship(
+        back_populates="investigation", order_by="Proposal.id"
+    )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "investigation_id": self.id,
+            "incident_number": self.incident_number,
+            "state": self.state,
+            "subject_user_id": self.subject_user_id,
+            "subject_device_id": self.subject_device_id,
+            "opened_at": self.opened_at.isoformat() if self.opened_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+            "diagnosis": {
+                "root_cause": self.root_cause,
+                "contributing_factors": self.contributing_factors,
+                "evidence_cited": self.evidence_cited,
+                "confidence": self.diagnosis_confidence,
+                "recorded_at": self.diagnosed_at.isoformat() if self.diagnosed_at else None,
+            }
+            if self.root_cause
+            else None,
+            "resolution": {
+                "code": self.resolution_code,
+                "summary": self.resolution_summary,
+            }
+            if self.resolution_code
+            else None,
+        }
+
+
+class Proposal(Base):
+    """A remediation the agent wants to perform, and what happened to it."""
+
+    __tablename__ = "proposals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("investigations.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    action: Mapped[str] = mapped_column(String(120))
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    rationale: Mapped[str] = mapped_column(Text)
+    expected_outcome: Mapped[str] = mapped_column(Text)
+
+    # The policy's classification and the agent's own opinion are recorded
+    # separately. The policy decides; the opinion is evidence about the agent.
+    policy_risk_class: Mapped[str] = mapped_column(String(20))
+    agent_risk_assessment: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    agent_risk_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    state: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approver_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approval_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    execution_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Snapshots taken by Aegis either side of the action, so verification is a
+    # measurement rather than a claim.
+    state_before: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    state_after: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    investigation: Mapped[Investigation] = relationship(back_populates="proposals")
+    verification: Mapped[Verification | None] = relationship(
+        back_populates="proposal", uselist=False
+    )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "proposal_id": self.id,
+            "action": self.action,
+            "arguments": self.arguments,
+            "rationale": self.rationale,
+            "expected_outcome": self.expected_outcome,
+            "policy_risk_class": self.policy_risk_class,
+            "agent_risk_assessment": self.agent_risk_assessment,
+            "state": self.state,
+            "approved_by": self.approved_by,
+            "approver_role": self.approver_role,
+            "approval_note": self.approval_note,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "executed_at": self.executed_at.isoformat() if self.executed_at else None,
+        }
+
+
+class Verification(Base):
+    """Did the remediation actually work?
+
+    Holds both the agent's verdict and Aegis's own comparison of the before and
+    after snapshots. When they disagree, the disagreement is the record, and the
+    workflow refuses to resolve the incident as fixed.
+    """
+
+    __tablename__ = "verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"), index=True)
+    investigation_id: Mapped[int] = mapped_column(Integer, index=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    agent_verdict: Mapped[str] = mapped_column(String(30))
+    agent_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    measured_verdict: Mapped[str] = mapped_column(String(30))
+    measured_delta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    agreed: Mapped[bool] = mapped_column(default=True)
+    discrepancy: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    proposal: Mapped[Proposal] = relationship(back_populates="verification")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "verification_id": self.id,
+            "proposal_id": self.proposal_id,
+            "agent_verdict": self.agent_verdict,
+            "agent_rationale": self.agent_rationale,
+            "measured_verdict": self.measured_verdict,
+            "measured_delta": self.measured_delta,
+            "agreed": self.agreed,
+            "discrepancy": self.discrepancy,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
+        }
+
+
 class AuditIntegrityError(RuntimeError):
     """Raised when something tries to rewrite history."""
 

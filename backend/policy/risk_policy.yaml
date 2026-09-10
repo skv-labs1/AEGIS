@@ -30,6 +30,26 @@ defaults:
       unclassified tool are permitted and recorded. Writes are refused until an
       administrator assigns a risk class.
 
+# How Aegis measures whether a remediation worked. Configured rather than
+# hard-coded, so a different endpoint platform with a different health model
+# only needs new paths here.
+verification:
+  health_tool: endpoint_get_device_health
+  subject_argument: device_id
+  primary_metric:
+    path: health_score
+    direction: increase
+    min_change: 5.0
+  secondary_metrics:
+    - path: telemetry.disk_used_pct
+      direction: decrease
+    - path: telemetry.cpu_avg_pct
+      direction: decrease
+    - path: telemetry.memory_used_pct
+      direction: decrease
+    - path: band
+      direction: informational
+
 roles:
   service_desk:
     label: Service Desk Analyst

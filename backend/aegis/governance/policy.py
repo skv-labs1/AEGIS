@@ -82,6 +82,7 @@ class RiskPolicy:
     unclassified_read: str
     unclassified_write: str
     unclassified_reason: str
+    verification: dict[str, Any] | None = None
     source_path: Path | None = None
     _warnings: list[str] = field(default_factory=list)
 
@@ -109,6 +110,7 @@ class RiskPolicy:
             unclassified_reason=defaults.get(
                 "reason", "Tool is not classified in the Aegis risk policy."
             ),
+            verification=raw.get("verification"),
             source_path=source_path,
         )
         policy._validate()

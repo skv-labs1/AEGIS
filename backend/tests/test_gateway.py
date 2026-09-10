@@ -37,14 +37,36 @@ async def test_published_descriptions_state_the_governance(gateway):
     async with Client(gateway.server, raise_exceptions=True) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
 
-    clear = tools["endpoint_clear_disk_space"]
-    assert "Risk class: WRITE_MEDIUM" in clear.description
-    assert "requires approval" in clear.description
-    assert clear.annotations.destructive_hint is True
-
     read = tools["endpoint_get_device_health"]
     assert "Risk class: READ" in read.description
     assert read.annotations.read_only_hint is True
+
+
+async def test_device_changing_tools_are_not_directly_callable(gateway):
+    """A remediation must be proposed and approved, never just called."""
+    assert "endpoint_clear_disk_space" not in gateway.published_tools
+    assert "endpoint_restart_application" not in gateway.published_tools
+    # Resolving an incident is gated on verification, so it is not callable either.
+    assert "itsm_resolve_incident" not in gateway.published_tools
+
+    async with Client(gateway.server, raise_exceptions=True) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert "endpoint_clear_disk_space" not in names
+    assert {"propose_remediation", "execute_remediation", "verify_remediation"} <= names
+
+
+async def test_remediation_catalogue_keeps_the_actions_discoverable(gateway):
+    """Not callable is not the same as hidden: the agent must know what exists."""
+    async with Client(gateway.server, raise_exceptions=True) as client:
+        result = await client.call_tool("list_remediation_actions", {})
+    actions = {a["action"]: a for a in result.structured_content["actions"]}
+
+    clear = actions["endpoint_clear_disk_space"]
+    assert clear["risk_class"] == "WRITE_MEDIUM"
+    assert clear["approval_required"] is True
+    assert "service_desk" in clear["approver_roles"]
+    assert "device_id" in clear["parameters"]["properties"]
+    assert clear["expected_effect"]
 
 
 async def test_upstream_schemas_survive_the_proxy(gateway):
@@ -52,10 +74,9 @@ async def test_upstream_schemas_survive_the_proxy(gateway):
     async with Client(gateway.server, raise_exceptions=True) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
 
-    schema = tools["endpoint_clear_disk_space"].input_schema
-    assert "device_id" in schema["properties"]
-    assert "categories" in schema["properties"]
-    assert schema["required"] == ["device_id"]
+    health = tools["endpoint_get_device_health"].input_schema
+    assert "device_id" in health["properties"]
+    assert health["required"] == ["device_id"]
 
     search = tools["itsm_search_incidents"].input_schema
     assert {"caller_id", "device_id", "state", "text", "limit"} <= set(search["properties"])
@@ -197,7 +218,8 @@ async def test_status_reports_systems_and_classification(gateway):
     assert {s["name"] for s in payload["systems"]} == {"itsm", "itam", "endpoint"}
     assert all(s["connected"] for s in payload["systems"])
     assert "READ" in payload["tools_by_risk_class"]
-    assert "WRITE_MEDIUM" in payload["tools_by_risk_class"]
+    # Medium and high risk actions are not published, so they cannot appear here.
+    assert "WRITE_MEDIUM" not in payload["tools_by_risk_class"]
 
 
 async def test_an_unavailable_system_degrades_rather_than_failing(
