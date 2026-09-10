@@ -1,0 +1,112 @@
+# Aegis risk policy.
+#
+# Policy is data, not prompt text. The agent cannot see, argue with, or lower a
+# classification here. The agent may state its own opinion of an action's risk;
+# that opinion is recorded alongside this classification, and this one decides.
+#
+# Risk classes
+#   READ          no state change
+#   WRITE_LOW     changes a record, easily reversed, no user impact
+#   WRITE_MEDIUM  changes a device or deletes data; user-visible
+#   WRITE_HIGH    disruptive, expensive, or hard to reverse
+#
+# Approval
+#   never      execute without a human
+#   required   suspend until a human with a listed role approves
+#   denied     the agent may never perform this, with or without approval
+
+version: 1
+
+defaults:
+  # A tool Aegis has never seen. Reads are permitted and logged so an
+  # investigation is not blocked by a newly attached system; writes are refused
+  # until an administrator classifies them here. A tool that does not declare
+  # itself read-only is treated as a write.
+  unclassified:
+    read: allow_and_log
+    write: deny
+    reason: >-
+      This tool is not classified in the Aegis risk policy. Reads from an
+      unclassified tool are permitted and recorded. Writes are refused until an
+      administrator assigns a risk class.
+
+roles:
+  service_desk:
+    label: Service Desk Analyst
+    may_approve: [WRITE_LOW, WRITE_MEDIUM]
+  it_admin:
+    label: IT Administrator
+    may_approve: [WRITE_LOW, WRITE_MEDIUM, WRITE_HIGH]
+  auditor:
+    label: Auditor
+    may_approve: []          # read and review everything, approve nothing
+
+tools:
+  # --- ITSM ------------------------------------------------------------------
+  itsm_get_incident:      { risk: READ, approval: never }
+  itsm_search_incidents:  { risk: READ, approval: never }
+  itsm_get_user:          { risk: READ, approval: never }
+  itsm_create_incident:
+    risk: WRITE_LOW
+    approval: never
+    reason: Raising a ticket is how work gets tracked. Reversible and low impact.
+  itsm_add_work_note:
+    risk: WRITE_LOW
+    approval: never
+    reason: Appends to the ticket narrative. Cannot change state or destroy data.
+  itsm_resolve_incident:
+    risk: WRITE_LOW
+    approval: never
+    requires: verification
+    reason: >-
+      Reversible by reopening, but must not be claimed before the fix is
+      verified. The workflow blocks resolution until verification has run.
+
+  # --- ITAM ------------------------------------------------------------------
+  itam_get_asset:           { risk: READ, approval: never }
+  itam_get_assets_for_user: { risk: READ, approval: never }
+  itam_get_warranty:        { risk: READ, approval: never }
+  itam_get_spare_inventory: { risk: READ, approval: never }
+
+  # --- Endpoint --------------------------------------------------------------
+  endpoint_get_device:              { risk: READ, approval: never }
+  endpoint_get_device_health:       { risk: READ, approval: never }
+  endpoint_get_health_history:      { risk: READ, approval: never }
+  endpoint_get_installed_software:  { risk: READ, approval: never }
+  endpoint_get_patch_status:        { risk: READ, approval: never }
+
+  endpoint_clear_disk_space:
+    risk: WRITE_MEDIUM
+    approval: required
+    roles: [service_desk, it_admin]
+    reason: >-
+      Deletes files from a user's device. Restricted to reclaimable categories,
+      but the user may not expect it and some deletions cannot be undone.
+    expected_effect: Frees disk space; may relieve CPU and memory pressure.
+
+  endpoint_restart_application:
+    risk: WRITE_MEDIUM
+    approval: required
+    roles: [service_desk, it_admin]
+    reason: >-
+      Terminates a running application. The user can lose unsaved work, which
+      is exactly the harm several of these incidents report.
+    expected_effect: Application restarts; its crash counter resets.
+
+  # Declared and permanently refused. Listing a denied action is deliberate: it
+  # documents the boundary rather than leaving it to chance, and it is what a
+  # prompt-injection attempt runs into.
+  endpoint_reimage_device:
+    risk: WRITE_HIGH
+    approval: denied
+    reason: >-
+      Destroys local data and removes the user from service for hours. Never
+      appropriate as an automated or agent-initiated remediation.
+
+  endpoint_update_software:
+    risk: WRITE_HIGH
+    approval: required
+    roles: [it_admin]
+    reason: >-
+      Changes a business-critical application. Needs a change window and an
+      administrator, not a service desk approval.

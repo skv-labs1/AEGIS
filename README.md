@@ -16,25 +16,56 @@ Incident → Investigation → Evidence → Diagnosis → Recommendation → App
 
 ## Status
 
-**Phase 1 complete: the demo enterprise systems run.** Three MCP servers (ITSM, ITAM, endpoint)
-serve synthetic data over Streamable HTTP, with a device simulator so remediation genuinely
-changes state. 38 tests pass, including the full headline scenario end to end over MCP.
+**Phase 2 complete: the governance gateway runs.** Aegis connects to three demo enterprise
+systems, re-publishes their tools under its own namespace, and puts every call through
+policy, an approval gate, an audit trail and evidence capture. 70 tests pass across both
+packages.
 
-Phases 2 onward (the Aegis gateway, the agent engine, the console) are still proposal.
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
+Phases 3 onward (the agent engine, the console, evaluation) are still proposal. Read
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) for the tool contract.
 
 ## Quick start
 
 ```bash
-make install        # create the venv and install the demo systems
-make demo-systems   # seed the database and run all three MCP servers
-make test           # 38 tests, including the headline scenario
+make install   # two virtualenvs: the demo systems and the gateway
+make stack     # start the demo systems and the gateway in the background
+make test      # 70 tests across both packages
+make stop
 ```
 
-The servers listen on `http://127.0.0.1:8801/mcp` (ITSM), `:8802/mcp` (ITAM) and
-`:8803/mcp` (endpoint). Point any MCP client at them, including MCP Inspector
+The gateway serves MCP at `http://127.0.0.1:8800/mcp`. The demo enterprise systems sit
+behind it on ports 8801 to 8803 and are not meant to be reached directly by an agent.
+
+### Attaching an agent
+
+`.mcp.json` in the repo root already points Claude Code at the gateway, so `make stack`
+followed by starting Claude Code in this directory is enough to investigate INC-1042
+through governed tools. Any MCP host works, including MCP Inspector
 (`npx @modelcontextprotocol/inspector`).
+
+Note that with no approval channel attached, every write is refused by design. Approvals
+arrive with the console in a later phase.
+
+## What the gateway does
+
+```text
+agent host ──MCP──▶ Aegis gateway ──MCP──▶ itsm | itam | endpoint
+                    │
+                    policy check → approval gate → audit → call → evidence
+```
+
+- **Tools are namespaced by source system**, so `get_incident` becomes `itsm_get_incident`
+  and two systems cannot collide.
+- **Denied actions are never published.** `endpoint_reimage_device` exists upstream and the
+  agent never sees it, because advertising an action it may never take only invites an attempt.
+- **A tool Aegis has never seen defaults to safe.** Reads are allowed and logged so a newly
+  attached system does not block an investigation. Anything that does not positively declare
+  itself read-only is treated as a write and refused until an administrator classifies it.
+- **The audit table is append-only**, enforced in code rather than by convention.
+- **Evidence is kept, master data is not.** Aegis stores what a tool returned during an
+  investigation, because the live record will have moved on by the time anyone reviews the
+  decision. Users, devices, assets and tickets stay in the systems of record.
 
 ## The demo scenario
 

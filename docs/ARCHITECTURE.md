@@ -1,6 +1,6 @@
 # Aegis — Architecture and Technology Stack Proposal
 
-Status: **Revision 5. Phase 1 implemented**; phases 2 onward are still proposal. No application code has been written yet.
+Status: **Revision 5. Phases 1 and 2 implemented**; phases 3 onward are still proposal. No application code has been written yet.
 
 Aegis is an **MCP server that governs agentic IT operations**. Any MCP-capable agent host (Claude
 Code, Claude Desktop, or a self-hosted agent loop) connects to Aegis and investigates and remediates

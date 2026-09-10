@@ -1,0 +1,37 @@
+# Enterprise systems Aegis connects to, as MCP servers.
+#
+# Swapping the demo ITSM for ServiceNow, Ivanti or Freshservice is a change to
+# the `url` on one entry. Credentials live in the upstream server's own
+# environment, never in Aegis.
+#
+# `prefix` namespaces the server's tools inside Aegis (get_incident becomes
+# itsm_get_incident), which keeps two systems from colliding on a tool name.
+
+version: 1
+
+upstreams:
+  - name: itsm
+    prefix: itsm
+    capability: "IT Service Management"
+    url: http://127.0.0.1:8801/mcp
+    enabled: true
+    description: >-
+      Incident management. Demo system backed by synthetic data.
+
+  - name: itam
+    prefix: itam
+    capability: "IT Asset Management"
+    url: http://127.0.0.1:8802/mcp
+    enabled: true
+    description: >-
+      Asset records, ownership, warranty and lifecycle. Demo system backed by
+      synthetic data.
+
+  - name: endpoint
+    prefix: endpoint
+    capability: "Endpoint Management"
+    url: http://127.0.0.1:8803/mcp
+    enabled: true
+    description: >-
+      Device inventory, health telemetry, software, patching and endpoint
+      remediation. Demo system backed by synthetic data.

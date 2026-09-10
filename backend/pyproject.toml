@@ -1,0 +1,34 @@
+[project]
+name = "aegis-gateway"
+version = "0.2.0"
+description = "Aegis governance gateway: an MCP server that governs agentic IT operations"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.0",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "pyyaml>=6.0",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[project.scripts]
+aegis-gateway = "aegis.gateway.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aegis"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
