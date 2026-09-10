@@ -86,6 +86,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action, arguments: {}, rationale }),
     }),
+  metrics: () => request<Metrics>("/metrics"),
   audit: (investigationId?: number) =>
     request<{ events: AuditEvent[] }>(
       `/audit?limit=300${investigationId ? `&investigation_id=${investigationId}` : ""}`,
@@ -293,4 +294,39 @@ export type DeviceDetail = {
   history: { points: { captured_at: string; health_score: number; disk_used_pct: number }[]; trend: Record<string, any> };
   incidents: IncidentList;
   asset: Record<string, any> | null;
+};
+
+export type Metrics = {
+  scenarios_defined: number;
+  latest_run: {
+    run_id: number;
+    started_at: string;
+    label: string;
+    provider: string;
+    model: string;
+    replayed: boolean;
+    scenarios: number;
+    passed: number;
+    mean_score: number;
+  } | null;
+  latest_results: {
+    scenario_id: string;
+    title: string;
+    passed: boolean;
+    score: number;
+    turns: number;
+    tool_calls: number;
+    duration_ms: number;
+    failed_checks: string[];
+    checks: { check: string; passed: boolean; detail: string; weight: number }[];
+  }[];
+  history: { run_id: number; provider: string; replayed: boolean; mean_score: number; passed: number; scenarios: number }[];
+  operations: {
+    tool_calls: number;
+    model_calls: number;
+    refusals: number;
+    approvals_requested: number;
+    median_tool_latency_ms: number | null;
+  };
+  by_provider: Record<string, { calls: number; input_tokens: number; output_tokens: number }>;
 };

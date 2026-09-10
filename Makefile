@@ -7,7 +7,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help install seed demo-systems gateway stack stop test test-demo test-gateway \
         lint fmt clean pending audit investigations inspector investigate check-providers \
-        approve reject demo console console-dev build-console record-trace
+        approve reject demo console console-dev build-console record-trace evals
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -86,6 +86,9 @@ audit:  ## Print the audit trail
 
 investigate:  ## Run an investigation with the built-in engine: make investigate INC=INC-1042
 	@cd backend && .venv/bin/python -m aegis.engine.run $(or $(INC),INC-1042) $(if $(PROVIDER),--provider $(PROVIDER),)
+
+evals:  ## Score the eval scenarios (uses replay when no provider key is set)
+	@cd backend && .venv/bin/python -m aegis.evals.run $(if $(PROVIDER),--provider $(PROVIDER),)
 
 record-trace:  ## Record a live run for replay: make record-trace INC=INC-1042 (needs a key)
 	@cd backend && .venv/bin/python -m aegis.replay.record $(or $(INC),INC-1042)

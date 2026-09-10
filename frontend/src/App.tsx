@@ -5,7 +5,7 @@ import { Incidents } from "./pages/Incidents";
 import { IncidentDetail } from "./pages/IncidentDetail";
 import { Approvals } from "./pages/Approvals";
 import { Device } from "./pages/Device";
-import { AgentActivity, Audit, Policy } from "./pages/Governance";
+import { AgentActivity, Audit, MetricsPage, Policy } from "./pages/Governance";
 
 type View =
   | { name: "incidents" }
@@ -14,7 +14,8 @@ type View =
   | { name: "device"; id: string }
   | { name: "activity" }
   | { name: "policy" }
-  | { name: "audit" };
+  | { name: "audit" }
+  | { name: "metrics" };
 
 const NAV: { key: View["name"]; label: string }[] = [
   { key: "incidents", label: "Incidents" },
@@ -22,6 +23,7 @@ const NAV: { key: View["name"]; label: string }[] = [
   { key: "activity", label: "Agent activity" },
   { key: "policy", label: "Policy" },
   { key: "audit", label: "Audit" },
+  { key: "metrics", label: "Evaluation" },
 ];
 
 export default function App() {
@@ -159,6 +161,7 @@ export default function App() {
         {view.name === "activity" && <AgentActivity status={status} />}
         {view.name === "policy" && <Policy />}
         {view.name === "audit" && <Audit />}
+        {view.name === "metrics" && <MetricsPage />}
       </main>
 
       <footer className="mx-auto max-w-[1500px] px-4 pb-8 text-[11px] text-ink-600">

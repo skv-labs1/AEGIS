@@ -351,6 +351,75 @@ class Verification(Base):
         }
 
 
+class EvalRun(Base):
+    """One pass of the eval scenarios.
+
+    The provider is stored with the run because a score from a replayed trace
+    measures the harness and the governance, not a model, and presenting one as
+    the other would be exactly the kind of unsupported claim this project is
+    about catching.
+    """
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    provider: Mapped[str] = mapped_column(String(60), default="unknown")
+    model: Mapped[str] = mapped_column(String(120), default="unknown")
+    replayed: Mapped[bool] = mapped_column(default=False)
+    scenarios: Mapped[int] = mapped_column(Integer, default=0)
+    passed: Mapped[int] = mapped_column(Integer, default=0)
+    mean_score: Mapped[float] = mapped_column(Float, default=0.0)
+
+    results: Mapped[list[EvalResult]] = relationship(back_populates="run")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.id,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "label": self.label,
+            "provider": self.provider,
+            "model": self.model,
+            "replayed": self.replayed,
+            "scenarios": self.scenarios,
+            "passed": self.passed,
+            "mean_score": round(self.mean_score, 3),
+        }
+
+
+class EvalResult(Base):
+    """How one scenario went in one run."""
+
+    __tablename__ = "eval_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("eval_runs.id"), index=True)
+    scenario_id: Mapped[str] = mapped_column(String(80))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    passed: Mapped[bool] = mapped_column(default=False)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    turns: Mapped[int] = mapped_column(Integer, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    run: Mapped[EvalRun] = relationship(back_populates="results")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario_id": self.scenario_id,
+            "title": self.title,
+            "passed": self.passed,
+            "score": round(self.score, 3),
+            "turns": self.turns,
+            "tool_calls": self.tool_calls,
+            "duration_ms": round(self.duration_ms, 1),
+            "failed_checks": (self.detail or {}).get("failed_checks", []),
+            "checks": (self.detail or {}).get("checks", []),
+        }
+
+
 class AuditIntegrityError(RuntimeError):
     """Raised when something tries to rewrite history."""
 

@@ -93,6 +93,11 @@ class AegisGateway:
             load_upstreams(self.settings.upstreams_file),
             timeout=self.settings.upstream_timeout_seconds,
         )
+        # Tool calls are attributed to the investigation that is running, so the
+        # trail can be read back per investigation rather than as one flat log.
+        # This assumes one investigation at a time per gateway, which is what the
+        # console's run queue enforces; a multi-tenant deployment would scope it
+        # to the MCP session instead.
         self.audit = AuditLog()
         self.server = MCPServer(
             name="aegis",
@@ -110,6 +115,7 @@ class AegisGateway:
             policy=self.policy,
             approvals=self.approvals,
             remediation_actions=lambda: self._remediation_catalogue,
+            bind_investigation=self.bind_investigation,
         )
 
     # -- startup --------------------------------------------------------------
@@ -594,6 +600,10 @@ class AegisGateway:
     @property
     def published_tools(self) -> list[str]:
         return list(self._registered)
+
+    def bind_investigation(self, investigation_id: int | None) -> None:
+        """Attribute subsequent tool calls to this investigation."""
+        self.audit.investigation_id = investigation_id
 
 
 async def build_gateway(

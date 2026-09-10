@@ -521,6 +521,52 @@ def _register(app: FastAPI) -> None:
 
     # -- audit and live stream ------------------------------------------------
 
+    @app.get("/api/metrics")
+    async def metrics() -> dict[str, Any]:
+        """Evaluation results, plus what the gateway has actually seen."""
+        from ..db.models import EvalResult, EvalRun
+        from ..evals.runner import load_scenarios
+
+        with session_scope() as db:
+            runs = db.query(EvalRun).order_by(EvalRun.id.desc()).limit(10).all()
+            latest = runs[0] if runs else None
+            results = (
+                [r.as_dict() for r in db.query(EvalResult).filter(EvalResult.run_id == latest.id).all()]
+                if latest
+                else []
+            )
+            events = db.query(AuditEvent).all()
+
+        tool_calls = [e for e in events if e.event_type == "tool.called"]
+        model_calls = [e for e in events if e.event_type == "model.called"]
+        latencies = sorted(e.latency_ms for e in tool_calls if e.latency_ms)
+        by_provider: dict[str, dict[str, Any]] = {}
+        for event in model_calls:
+            name = (event.result or {}).get("provider", "unknown")
+            entry = by_provider.setdefault(name, {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+            entry["calls"] += 1
+            entry["input_tokens"] += (event.result or {}).get("input_tokens", 0) or 0
+            entry["output_tokens"] += (event.result or {}).get("output_tokens", 0) or 0
+
+        return {
+            "scenarios_defined": len(load_scenarios()),
+            "latest_run": latest.as_dict() if latest else None,
+            "latest_results": results,
+            "history": [r.as_dict() for r in runs],
+            "operations": {
+                "tool_calls": len(tool_calls),
+                "model_calls": len(model_calls),
+                "refusals": sum(1 for e in events if e.event_type == "policy.refused"),
+                "approvals_requested": sum(
+                    1 for e in events if e.event_type == "approval.required"
+                ),
+                "median_tool_latency_ms": (
+                    round(latencies[len(latencies) // 2], 1) if latencies else None
+                ),
+            },
+            "by_provider": by_provider,
+        }
+
     @app.get("/api/audit")
     async def audit(
         investigation_id: int | None = None, since_id: int = 0, limit: int = 300

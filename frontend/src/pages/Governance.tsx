@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, subscribe, type AuditEvent, type PolicyView, type Status } from "../lib/api";
+import { api, subscribe, type AuditEvent, type Metrics, type PolicyView, type Status } from "../lib/api";
 import { Card, Chip, Empty, ErrorNote, Mono, RiskChip, Spinner, clockTime } from "../components/ui";
 
 export function Policy() {
@@ -280,6 +280,126 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
     <div className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5">
       <div className={`text-2xl font-semibold tabular-nums ${tone ?? "text-ink-100"}`}>{value}</div>
       <div className="text-[11px] uppercase tracking-wide text-ink-400">{label}</div>
+    </div>
+  );
+}
+
+
+export function MetricsPage() {
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = () => api.metrics().then(setMetrics).catch((exc) => setError(String(exc)));
+    load();
+    const timer = setInterval(load, 8000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (!metrics) return <Spinner label="Loading metrics" />;
+
+  const run = metrics.latest_run;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-semibold">Evaluation</h1>
+        <p className="text-xs text-ink-400">
+          Scenarios are scored from the audit trail, never from the agent's account of itself.
+          {" "}{metrics.scenarios_defined} scenarios defined.
+        </p>
+      </div>
+
+      {run?.replayed && (
+        <div className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs text-violet-500">
+          The latest run used replayed traces. That measures the harness and the governance, not a
+          model. Set a provider key and run <Mono>make evals</Mono> for results that say anything
+          about model quality.
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Scenarios defined" value={metrics.scenarios_defined} />
+        <Stat label="Passed in last run" value={run?.passed ?? 0} />
+        <Stat label="Tool calls seen" value={metrics.operations.tool_calls} />
+        <Stat
+          label="Refused by policy"
+          value={metrics.operations.refusals}
+          tone={metrics.operations.refusals ? "text-warn-500" : undefined}
+        />
+      </div>
+
+      {run ? (
+        <Card
+          title={`Latest run — ${run.provider}/${run.model}`}
+          subtitle={`Mean score ${(run.mean_score * 100).toFixed(0)}% across ${run.scenarios} scenario(s)`}
+          actions={run.replayed ? <Chip tone="bg-violet-500/15 text-violet-500 ring-violet-500/30">replayed</Chip> : <Chip>live</Chip>}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-ink-800 text-[11px] uppercase tracking-wide text-ink-400">
+                  <th className="py-2 pr-3 font-medium">Scenario</th>
+                  <th className="py-2 pr-3 font-medium">Result</th>
+                  <th className="py-2 pr-3 font-medium">Score</th>
+                  <th className="py-2 pr-3 font-medium">Turns</th>
+                  <th className="py-2 font-medium">Failed checks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.latest_results.map((result) => (
+                  <tr key={result.scenario_id} className="border-b border-ink-850 last:border-0">
+                    <td className="py-2 pr-3">
+                      <div className="text-ink-100">{result.title}</div>
+                      <Mono>{result.scenario_id}</Mono>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Chip tone={result.passed ? "bg-ok-500/15 text-ok-500 ring-ok-500/30" : "bg-alert-500/15 text-alert-500 ring-alert-500/30"}>
+                        {result.passed ? "pass" : "fail"}
+                      </Chip>
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums text-ink-200">{(result.score * 100).toFixed(0)}%</td>
+                    <td className="py-2 pr-3 tabular-nums text-ink-300">{result.turns}</td>
+                    <td className="py-2 text-xs text-alert-500">{result.failed_checks.join(", ") || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : (
+        <Card title="No evaluation has been run">
+          <Empty>
+            Run <Mono>make evals</Mono> to score the scenarios and populate this page.
+          </Empty>
+        </Card>
+      )}
+
+      {Object.keys(metrics.by_provider).length > 0 && (
+        <Card title="Model usage by provider" subtitle="Recorded from the audit trail.">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-ink-800 text-[11px] uppercase tracking-wide text-ink-400">
+                <th className="py-2 pr-3 font-medium">Provider</th>
+                <th className="py-2 pr-3 font-medium">Calls</th>
+                <th className="py-2 pr-3 font-medium">Input tokens</th>
+                <th className="py-2 font-medium">Output tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(metrics.by_provider).map(([name, usage]) => (
+                <tr key={name} className="border-b border-ink-850 last:border-0">
+                  <td className="py-1.5 pr-3"><Mono>{name}</Mono></td>
+                  <td className="py-1.5 pr-3 tabular-nums text-ink-200">{usage.calls}</td>
+                  <td className="py-1.5 pr-3 tabular-nums text-ink-300">{usage.input_tokens}</td>
+                  <td className="py-1.5 tabular-nums text-ink-300">{usage.output_tokens}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
     </div>
   );
 }

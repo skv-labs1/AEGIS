@@ -49,12 +49,16 @@ class InvestigationService:
         policy: RiskPolicy,
         approvals: ApprovalService,
         remediation_actions: Callable[[], dict[str, Any]],
+        bind_investigation: Callable[[int | None], None] | None = None,
     ) -> None:
         self._invoke = invoke
         self._policy = policy
         self._approvals = approvals
         self._remediation_actions = remediation_actions
         self._verification = VerificationConfig.from_dict(policy.verification)
+        # Lets the gateway attribute later tool calls to this investigation, so
+        # the audit trail can be read back per investigation.
+        self._bind = bind_investigation or (lambda _: None)
 
     # -- helpers --------------------------------------------------------------
 
@@ -122,6 +126,7 @@ class InvestigationService:
             investigation_id = record.id
             payload = record.as_dict()
 
+        self._bind(investigation_id)
         self._audit(investigation_id, session_id).record(
             EventType.EVIDENCE_CAPTURED,
             actor=Actor.GATEWAY,
@@ -573,6 +578,7 @@ class InvestigationService:
             preapproved=True,
         )
 
+        self._bind(None)
         self._audit(investigation_id, session_id).record(
             EventType.TOOL_CALLED,
             phase="resolve",

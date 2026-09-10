@@ -16,13 +16,13 @@ Incident → Investigation → Evidence → Diagnosis → Recommendation → App
 
 ## Status
 
-**Phase 5 complete: the console runs the whole thing.** Aegis governs three demo enterprise
+**Phases 1 to 7 complete.** Aegis governs three demo enterprise
 systems, holds every device-changing action behind a proposal a named human approves,
 verifies remediation against before and after measurements, and shows all of it live in an
 operations console. A built-in engine can drive investigations on a free-tier model, and any
 MCP host such as Claude Code can drive them instead. 123 tests pass across both packages.
 
-Phases 6 onward (replay mode, evaluation, deployment) are still proposal. Read
+Phase 8, packaging and deployment, is still proposal. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/MCP_CONTRACT.md](docs/MCP_CONTRACT.md) for the tool contract.
 
