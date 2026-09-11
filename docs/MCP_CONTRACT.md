@@ -42,6 +42,7 @@ written or tested against it.
 | `get_incident(number)` | read | One incident with caller details and work notes. |
 | `search_incidents(caller_id?, device_id?, state?, text?, opened_within_days?, exclude_number?, limit?)` | read | Incident history. Reports how many were closed as a workaround, which flags a recurring unresolved problem. |
 | `get_user(query)` | read | User by id, email or name fragment. |
+| `get_incident_summary(recent_days?, top_repeat?)` | read | Queue-wide volume, ageing, workaround rate and repeat callers. One call in place of a scan of the whole queue. |
 | `create_incident(short_description, description, caller_id, device_id?, priority?, category?, subcategory?, channel?)` | write, non-destructive | Raise an incident. |
 | `add_work_note(number, text, author?)` | write, non-destructive | Append to the ticket narrative. |
 | `resolve_incident(number, resolution_code, resolution_notes, resolved_by?)` | write, idempotent | Resolve. `resolution_code` must be `Solved (Permanently)`, `Solved (Workaround)` or `Not Solved (Escalated)`. Resolving twice is refused. |
@@ -54,6 +55,7 @@ written or tested against it.
 | `get_assets_for_user(user_id)` | read | Everything assigned to a person, plus `primary_compute` to resolve "my laptop". |
 | `get_warranty(identifier)` | read | Warranty and refresh position, with guidance on repair versus replace. |
 | `get_spare_inventory(subcategory?)` | read | Unassigned stock, for replacement decisions. |
+| `get_asset_summary(expiring_within_days?)` | read | Estate-wide lifecycle, warranty and refresh position with spare stock by subcategory. |
 
 ## Endpoint capability
 
@@ -64,6 +66,7 @@ written or tested against it.
 | `get_health_history(device_id, days?)` | read | Daily scores, to separate a sudden failure from gradual degradation. |
 | `get_installed_software(device_id, name_contains?, outdated_only?)` | read | Inventory with installed versus latest version and known issues affecting the installed build. |
 | `get_patch_status(device_id)` | read | Missing and installed updates, with install state and failure reason. |
+| `get_fleet_summary(worst_devices?, top_patches?)` | read | Estate-wide health bands, operating system mix, patch compliance with install failure reasons, and the devices in the worst health. |
 | `clear_disk_space(device_id, categories?)` | write, destructive, idempotent | Reclaim space. Only these categories are permitted: `temp_files`, `windows_update_cache`, `browser_and_teams_cache`, `recycle_bin`, `windows_old`, `orphaned_outlook_data_files`. Anything else is refused. |
 | `restart_application(device_id, process_name)` | write, destructive | Restart a process and reset its crash counter. |
 

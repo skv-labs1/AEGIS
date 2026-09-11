@@ -197,6 +197,171 @@ def search_incidents(
 
 
 @server.tool(
+    name="get_incident_summary",
+    title="Get incident summary",
+    description=(
+        "Aggregate incident volume across the service desk in one call: counts by state, "
+        "priority and category, how many resolved incidents were closed with a workaround "
+        "rather than a fix, and which callers and devices are raising the same issue "
+        "repeatedly. Use this for a queue-wide view instead of searching incident by "
+        "incident."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_incident_summary(recent_days: int = 30, top_repeat: int = 6) -> dict[str, Any]:
+    """Service-desk wide incident volume, ageing and repeat-issue counts."""
+    conn = _conn()
+    try:
+        return _incident_summary(conn, recent_days=recent_days, top_repeat=top_repeat)
+    finally:
+        conn.close()
+
+
+def _resolved_days_ago(record: dict[str, Any]) -> int | None:
+    """Age of a resolution in whole days.
+
+    ``resolved_days_ago`` is written when the seed file is expanded, so an
+    incident resolved *during* the demo does not carry one. Falling back to the
+    timestamp keeps a just-closed incident from rendering as a blank age.
+    """
+    if record.get("resolved_days_ago") is not None:
+        return int(record["resolved_days_ago"])
+    resolved_at = record.get("resolved_at")
+    if not resolved_at:
+        return None
+    try:
+        closed = datetime.fromisoformat(resolved_at)  # Python 3.11+ parses the trailing Z
+    except ValueError:
+        return None
+    return max(0, (datetime.now(UTC) - closed).days)
+
+
+def _incident_summary(
+    conn: sqlite3.Connection, *, recent_days: int, top_repeat: int
+) -> dict[str, Any]:
+    rows = conn.execute("SELECT * FROM incidents").fetchall()
+    open_states = {"new", "in_progress", "on_hold"}
+
+    by_state: dict[str, int] = {}
+    by_priority: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    by_channel: dict[str, int] = {}
+    per_caller: dict[str, dict[str, Any]] = {}
+    per_device: dict[str, dict[str, Any]] = {}
+    workaround_examples: list[dict[str, Any]] = []
+    workarounds = 0
+    resolved = 0
+    reopened = 0
+    recent_opened = 0
+    open_ages: list[int] = []
+
+    for row in rows:
+        record = json.loads(row["record"])
+        state = record.get("state", "unknown")
+        by_state[state] = by_state.get(state, 0) + 1
+        by_priority[f"P{record.get('priority', '?')}"] = (
+            by_priority.get(f"P{record.get('priority', '?')}", 0) + 1
+        )
+        category = record.get("category") or "Uncategorised"
+        by_category[category] = by_category.get(category, 0) + 1
+        channel = record.get("channel") or "unknown"
+        by_channel[channel] = by_channel.get(channel, 0) + 1
+
+        opened_days_ago = int(record.get("opened_days_ago") or 0)
+        if opened_days_ago <= int(recent_days):
+            recent_opened += 1
+        if state in open_states:
+            open_ages.append(opened_days_ago)
+        if record.get("reopen_count"):
+            reopened += 1
+
+        is_workaround = (record.get("resolution_code") or "").startswith("Solved (Workaround)")
+        if state == "resolved" or state == "closed":
+            resolved += 1
+            if is_workaround:
+                workarounds += 1
+                if len(workaround_examples) < 8:
+                    workaround_examples.append(
+                        {
+                            "number": record["number"],
+                            "short_description": record["short_description"],
+                            "device_id": record.get("device_id"),
+                            "resolved_days_ago": _resolved_days_ago(record),
+                        }
+                    )
+
+        caller_id = record.get("caller_id")
+        if caller_id:
+            entry = per_caller.setdefault(
+                caller_id, {"caller_id": caller_id, "incidents": 0, "workarounds": 0}
+            )
+            entry["incidents"] += 1
+            entry["workarounds"] += 1 if is_workaround else 0
+        device_id = record.get("device_id")
+        if device_id:
+            entry = per_device.setdefault(
+                device_id,
+                {"device_id": device_id, "incidents": 0, "workarounds": 0, "categories": set()},
+            )
+            entry["incidents"] += 1
+            entry["workarounds"] += 1 if is_workaround else 0
+            entry["categories"].add(category)
+
+    def _top(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        repeats = [v for v in values if v["incidents"] > 1]
+        repeats.sort(key=lambda v: (-v["incidents"], -v["workarounds"]))
+        return repeats[: max(0, int(top_repeat))]
+
+    top_callers = _top(list(per_caller.values()))
+    for entry in top_callers:
+        user = records.get_user(conn, entry["caller_id"])
+        entry["display_name"] = user["display_name"] if user else None
+        entry["department"] = user.get("department") if user else None
+        entry["vip"] = bool(user.get("vip")) if user else False
+
+    top_devices = _top([{**v, "categories": sorted(v["categories"])} for v in per_device.values()])
+
+    # Totals over every repeat, not over the truncated lists above: a headline
+    # figure taken from a top-six list would understate the estate.
+    repeat_devices = [v for v in per_device.values() if v["incidents"] > 1]
+    repeat_callers = [v for v in per_caller.values() if v["incidents"] > 1]
+
+    open_total = sum(by_state.get(s, 0) for s in open_states)
+    return {
+        "total": len(rows),
+        "open": open_total,
+        "by_state": dict(sorted(by_state.items(), key=lambda kv: -kv[1])),
+        "by_priority": dict(sorted(by_priority.items())),
+        "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
+        "by_channel": dict(sorted(by_channel.items(), key=lambda kv: -kv[1])),
+        "opened_recently": {"days": int(recent_days), "count": recent_opened},
+        "ageing": {
+            "open_average_days": round(sum(open_ages) / len(open_ages), 1) if open_ages else None,
+            "open_oldest_days": max(open_ages) if open_ages else None,
+        },
+        "resolution_quality": {
+            "resolved": resolved,
+            "resolved_as_workaround": workarounds,
+            "workaround_rate_pct": round(workarounds / resolved * 100, 1) if resolved else None,
+            "reopened": reopened,
+            "note": (
+                "Incidents closed as a workaround did not address a root cause. A high rate "
+                "means the same faults are being re-reported."
+            ),
+            "examples": workaround_examples,
+        },
+        "repeats": {
+            "devices_affected": len(repeat_devices),
+            "incidents_on_repeat_devices": sum(v["incidents"] for v in repeat_devices),
+            "callers_affected": len(repeat_callers),
+            "incidents_from_repeat_callers": sum(v["incidents"] for v in repeat_callers),
+        },
+        "repeat_callers": top_callers,
+        "repeat_devices": top_devices,
+    }
+
+
+@server.tool(
     name="get_user",
     title="Get user",
     description="Retrieve a user record by id, email or name fragment.",

@@ -308,6 +308,14 @@ the same state, and eval scenarios are reproducible because their seed state is 
 code. Recorded replay traces live in `backend/traces/` for the same reason. Nothing external is needed
 to run the hosted demo in replay mode.
 
+**The story records and the background fleet are separate.** The hand-authored seed files carry the
+INC-1042 narrative and are never generated. A second, larger fleet — roughly sixty devices and seventy
+incidents — is generated deterministically from `seed/fleet.json` by `common/fleet.py` and appended
+after them, so an estate-wide view has something to show. It uses its own identifier ranges and numbers
+its incidents *below* the story range, because `create_incident` allocates from the highest number in
+the table and an eval scenario depends on that landing where it always has. Set `AEGIS_DEMO_NO_FLEET=1`
+to seed the story records alone.
+
 **Live data is fetched, never mirrored.** When a real ITSM, CMDB, or endpoint platform replaces a demo
 server, Aegis does not sync or copy its data. Each call from the agent is forwarded through the gateway
 to the vendor MCP server, which queries the live system and returns the current record. The console's
@@ -359,6 +367,7 @@ reads directly; it stays behind the demo MCP servers.
 
 | Route | Purpose |
 |---|---|
+| `/dashboard` | Landing page. Estate-wide operations: fleet health bands, patch estate with install failure reasons, workaround-closed incidents, repeat callers, asset position — read from the three systems through the gateway — alongside Aegis's own governance figures: investigation states, approvals, verified remediations, policy refusals. |
 | `/incidents` | Queue: priority, status, assignee, AI status. |
 | `/incidents/:id` | Live timeline as calls pass through the gateway; evidence panel; diagnosis card; recommendation with Approve / Reject; remediation result; verification before/after; resolution. |
 | `/incidents/:id/audit` | Full audit trail, filterable, exportable. |

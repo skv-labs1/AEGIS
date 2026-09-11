@@ -178,6 +178,80 @@ export function Sparkline({ points }: { points: number[] }) {
   );
 }
 
+export function StatTile({
+  label,
+  value,
+  detail,
+  tone,
+  onClick,
+  title,
+}: {
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  tone?: string;
+  onClick?: () => void;
+  title?: string;
+}) {
+  const body = (
+    <>
+      <div className={`text-[26px] leading-none font-semibold tabular-nums ${tone ?? "text-ink-100"}`}>
+        {value}
+      </div>
+      <div className="mt-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-400">{label}</div>
+      {detail && <div className="mt-1 text-[11px] text-ink-500">{detail}</div>}
+    </>
+  );
+  const shell = "rounded-lg border border-ink-800 bg-ink-900 px-3.5 py-3 text-left";
+  return onClick ? (
+    <button onClick={onClick} title={title} className={`${shell} w-full transition-colors hover:border-ink-700 hover:bg-ink-850`}>
+      {body}
+    </button>
+  ) : (
+    <div title={title} className={shell}>
+      {body}
+    </div>
+  );
+}
+
+/** A labelled set of counts drawn as proportional bars. */
+export function BarList({
+  items,
+  total,
+  emptyLabel = "Nothing to show.",
+}: {
+  items: { label: string; value: number; tone?: string; hint?: string }[];
+  total?: number;
+  emptyLabel?: string;
+}) {
+  const sum = total ?? items.reduce((acc, item) => acc + item.value, 0);
+  if (!items.length || sum === 0) return <Empty>{emptyLabel}</Empty>;
+  return (
+    <ul className="space-y-2">
+      {items.map((item) => {
+        const pct = Math.round((item.value / sum) * 100);
+        return (
+          <li key={item.label} title={item.hint}>
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="truncate text-ink-300">{item.label}</span>
+              <span className="shrink-0 tabular-nums text-ink-400">
+                <span className="text-ink-100">{item.value}</span>
+                <span className="ml-1.5 text-[11px] text-ink-500">{pct}%</span>
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-800">
+              <div
+                className={`h-full rounded-full ${item.tone ?? "bg-signal-500"}`}
+                style={{ width: `${Math.max(pct, 2)}%`, transition: "width 500ms ease-out" }}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-6 text-center text-xs text-ink-400">{children}</p>;
 }

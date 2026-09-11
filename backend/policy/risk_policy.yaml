@@ -66,6 +66,7 @@ tools:
   itsm_get_incident:      { risk: READ, approval: never }
   itsm_search_incidents:  { risk: READ, approval: never }
   itsm_get_user:          { risk: READ, approval: never }
+  itsm_get_incident_summary: { risk: READ, approval: never }
   itsm_create_incident:
     risk: WRITE_LOW
     approval: never
@@ -87,6 +88,7 @@ tools:
   itam_get_assets_for_user: { risk: READ, approval: never }
   itam_get_warranty:        { risk: READ, approval: never }
   itam_get_spare_inventory: { risk: READ, approval: never }
+  itam_get_asset_summary:   { risk: READ, approval: never }
 
   # --- Endpoint --------------------------------------------------------------
   endpoint_get_device:              { risk: READ, approval: never }
@@ -94,6 +96,7 @@ tools:
   endpoint_get_health_history:      { risk: READ, approval: never }
   endpoint_get_installed_software:  { risk: READ, approval: never }
   endpoint_get_patch_status:        { risk: READ, approval: never }
+  endpoint_get_fleet_summary:       { risk: READ, approval: never }
 
   endpoint_clear_disk_space:
     risk: WRITE_MEDIUM

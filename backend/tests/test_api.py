@@ -62,6 +62,10 @@ async def client(settings, fresh_enterprise_state, monkeypatch):
 
     from aegis.api import app as app_module
 
+    # The dashboard cache is module state and would otherwise carry answers
+    # from one test's database into the next one's.
+    app_module._dashboard_cache["payload"] = None
+
     application = app_module.create_app()
     async with _LifespanRunner(application):
         transport = httpx.ASGITransport(app=application)
@@ -254,3 +258,86 @@ async def test_reset_rebuilds_the_demo(client):
         assert db.query(AuditEvent).count() == 0
     device = (await client.get("/api/devices/DEV-4411")).json()
     assert device["health"]["telemetry"]["disk_used_pct"] == 97.0
+
+
+async def test_dashboard_reports_the_estate_and_aegis_own_governance(client):
+    payload = (await client.get("/api/dashboard")).json()
+
+    fleet = payload["fleet"]
+    assert fleet["device_count"] > 1, "the dashboard needs a fleet, not one device"
+    assert sum(fleet["health"]["bands"].values()) == fleet["scored_device_count"]
+    assert fleet["patching"]["devices_missing_critical"] >= 1
+    # The story device is the worst in the estate, which is what makes it the
+    # one an operator would click through to.
+    assert fleet["devices_needing_attention"][0]["device_id"] == "DEV-4411"
+
+    incidents = payload["incidents"]
+    assert incidents["total"] >= incidents["open"] > 0
+    assert incidents["resolution_quality"]["resolved_as_workaround"] > 0
+    assert any(c["caller_id"] == "USR-1001" for c in incidents["repeat_callers"])
+
+    assert payload["assets"]["total"] > 1
+    assert payload["sources"] == {"fleet": "endpoint", "incidents": "itsm", "assets": "itam"}
+
+    governance = payload["governance"]
+    assert governance["investigations"]["funnel"][0]["state"] == "investigating"
+    assert governance["approvals"]["pending"] == 0
+    assert governance["policy"]["governed_tool_calls"] >= 3
+
+
+async def test_dashboard_reads_are_audited_but_are_not_evidence(client):
+    """A screen refresh is a governed call; it is not something an agent saw."""
+    from aegis.db.models import Evidence
+
+    await client.get("/api/dashboard?refresh=true")
+
+    with session_scope() as db:
+        events = (
+            db.query(AuditEvent)
+            .filter(AuditEvent.tool_name == "endpoint_get_fleet_summary")
+            .all()
+        )
+        assert events and all(e.policy_decision == "allow" for e in events)
+        assert all(e.risk_class == "READ" for e in events)
+        assert (
+            db.query(Evidence)
+            .filter(Evidence.tool_name == "endpoint_get_fleet_summary")
+            .count()
+            == 0
+        )
+
+
+async def test_dashboard_is_cached_between_refreshes(client):
+    first = (await client.get("/api/dashboard?refresh=true")).json()
+    second = (await client.get("/api/dashboard")).json()
+    assert first["cached"] is False
+    assert second["cached"] is True
+    assert second["generated_at"] == first["generated_at"]
+
+
+async def test_dashboard_counts_an_approval_that_has_already_executed(client):
+    """A proposal moves to "executed" once it runs, and it was still approved.
+
+    Counting only proposals sitting in the "approved" state reported zero
+    approvals for a demo that had just completed successfully, which is the
+    opposite of what the screen is there to show.
+    """
+    raised = await client.post(
+        "/api/devices/DEV-4411/actions",
+        headers=ADMIN,
+        json={"action": "endpoint_clear_disk_space", "arguments": {}, "rationale": "Disk low."},
+    )
+    proposal_id = raised.json()["proposal_id"]
+
+    pending_view = (await client.get("/api/dashboard?refresh=true")).json()["governance"]
+    assert pending_view["approvals"] == {"pending": 1, "approved": 0, "rejected": 0}
+
+    await client.post(
+        f"/api/approvals/{proposal_id}", headers=ADMIN, json={"approve": True, "note": "go"}
+    )
+
+    with session_scope() as db:
+        assert db.get(Proposal, proposal_id).state == "executed"
+
+    after = (await client.get("/api/dashboard?refresh=true")).json()["governance"]
+    assert after["approvals"] == {"pending": 0, "approved": 1, "rejected": 0}

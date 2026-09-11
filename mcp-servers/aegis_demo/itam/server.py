@@ -191,6 +191,88 @@ def get_spare_inventory(subcategory: str | None = None) -> dict[str, Any]:
         conn.close()
 
 
+@server.tool(
+    name="get_asset_summary",
+    title="Get asset summary",
+    description=(
+        "Aggregate the asset estate in one call: counts by lifecycle state and category, "
+        "how much of the fleet is still in warranty, how much is past its refresh date, "
+        "and spare stock by subcategory. Use this to judge whether a fault should be "
+        "repaired, claimed under warranty or absorbed into a refresh."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_asset_summary(expiring_within_days: int = 90) -> dict[str, Any]:
+    """Estate-wide lifecycle, warranty and spare stock position."""
+    conn = _conn()
+    try:
+        return _asset_summary(conn, expiring_within_days=expiring_within_days)
+    finally:
+        conn.close()
+
+
+def _asset_summary(conn: sqlite3.Connection, *, expiring_within_days: int) -> dict[str, Any]:
+    assets = [_asset(r) for r in conn.execute("SELECT record FROM assets").fetchall()]
+
+    lifecycle: dict[str, int] = {}
+    category: dict[str, int] = {}
+    spares: dict[str, int] = {}
+    in_warranty = 0
+    expiring_soon = 0
+    refresh_overdue = 0
+    total_cost = 0.0
+    ages: list[int] = []
+    refresh_candidates: list[dict[str, Any]] = []
+
+    for asset in assets:
+        state = asset.get("lifecycle_state") or "unknown"
+        lifecycle[state] = lifecycle.get(state, 0) + 1
+        cat = asset.get("category") or "Uncategorised"
+        category[cat] = category.get(cat, 0) + 1
+        if state == "in_stock":
+            sub = asset.get("subcategory") or "Other"
+            spares[sub] = spares.get(sub, 0) + 1
+        if asset.get("warranty_active"):
+            in_warranty += 1
+            days_left = asset.get("warranty_expires_in_days")
+            if days_left is not None and 0 <= int(days_left) <= int(expiring_within_days):
+                expiring_soon += 1
+        if asset.get("refresh_overdue"):
+            refresh_overdue += 1
+            refresh_candidates.append(
+                {
+                    "asset_tag": asset["asset_tag"],
+                    "device_id": asset.get("device_id"),
+                    "model": asset.get("model"),
+                    "days_overdue": abs(int(asset.get("refresh_due_in_days") or 0)),
+                    "warranty_active": bool(asset.get("warranty_active")),
+                }
+            )
+        total_cost += float(asset.get("purchase_cost") or 0)
+        if asset.get("purchase_days_ago") is not None:
+            ages.append(int(asset["purchase_days_ago"]))
+
+    refresh_candidates.sort(key=lambda a: -a["days_overdue"])
+    return {
+        "total": len(assets),
+        "by_lifecycle_state": dict(sorted(lifecycle.items(), key=lambda kv: -kv[1])),
+        "by_category": dict(sorted(category.items(), key=lambda kv: -kv[1])),
+        "warranty": {
+            "in_warranty": in_warranty,
+            "out_of_warranty": len(assets) - in_warranty,
+            "expiring_within_days": int(expiring_within_days),
+            "expiring_soon": expiring_soon,
+        },
+        "refresh": {
+            "overdue": refresh_overdue,
+            "average_age_days": round(sum(ages) / len(ages)) if ages else None,
+            "candidates": refresh_candidates[:8],
+        },
+        "spares_by_subcategory": dict(sorted(spares.items(), key=lambda kv: -kv[1])),
+        "purchase_cost_total": round(total_cost, 2),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=f"Run the {SERVER_NAME} MCP server")
     parser.add_argument(

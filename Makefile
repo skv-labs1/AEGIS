@@ -61,10 +61,14 @@ stack:  ## Demo systems + a standalone gateway on 8800, without the console
 	@sleep 5
 	@echo "  Aegis gateway   http://127.0.0.1:8800/mcp"
 
+# The bracket around the first letter of each pattern below stops pkill from
+# matching the shell that is running it. Without it pkill kills its own parent
+# on the first line, the remaining lines never run, and the demo systems are
+# left behind still serving stale code.
 stop:  ## Stop everything started by `make demo` or `make stack`
-	@pkill -f "uvicorn aegis" 2>/dev/null || true
-	@pkill -f "aegis.gateway.server" 2>/dev/null || true
-	@pkill -f "aegis_demo" 2>/dev/null || true
+	@pkill -f "[u]vicorn aegis" 2>/dev/null || true
+	@pkill -f "[a]egis.gateway.server" 2>/dev/null || true
+	@pkill -f "[a]egis_demo" 2>/dev/null || true
 	@echo "stopped"
 
 pending:  ## List proposals waiting for a human decision

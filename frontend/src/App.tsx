@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PERSONAS, api, getPersona, restorePersona, setPersona, type Status } from "./lib/api";
 import { Chip } from "./components/ui";
+import { Dashboard } from "./pages/Dashboard";
 import { Incidents } from "./pages/Incidents";
 import { IncidentDetail } from "./pages/IncidentDetail";
 import { Approvals } from "./pages/Approvals";
@@ -8,6 +9,7 @@ import { Device } from "./pages/Device";
 import { AgentActivity, Audit, MetricsPage, Policy } from "./pages/Governance";
 
 type View =
+  | { name: "dashboard" }
   | { name: "incidents" }
   | { name: "incident"; number: string }
   | { name: "approvals" }
@@ -18,6 +20,7 @@ type View =
   | { name: "metrics" };
 
 const NAV: { key: View["name"]; label: string }[] = [
+  { key: "dashboard", label: "Dashboard" },
   { key: "incidents", label: "Incidents" },
   { key: "approvals", label: "Approvals" },
   { key: "activity", label: "Agent activity" },
@@ -27,7 +30,7 @@ const NAV: { key: View["name"]; label: string }[] = [
 ];
 
 export default function App() {
-  const [view, setView] = useState<View>({ name: "incidents" });
+  const [view, setView] = useState<View>({ name: "dashboard" });
   const [status, setStatus] = useState<Status | null>(null);
   const [persona, setPersonaState] = useState(getPersona());
   const [pending, setPending] = useState(0);
@@ -53,7 +56,7 @@ export default function App() {
     setResetting(true);
     try {
       await api.reset();
-      setView({ name: "incidents" });
+      setView({ name: "dashboard" });
     } finally {
       setResetting(false);
     }
@@ -66,7 +69,7 @@ export default function App() {
     <div className="min-h-full">
       <header className="sticky top-0 z-10 border-b border-ink-800 bg-ink-900/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-4 py-2.5">
-          <button onClick={() => setView({ name: "incidents" })} className="flex items-center gap-2">
+          <button onClick={() => setView({ name: "dashboard" })} className="flex items-center gap-2">
             <span className="text-lg">🛡</span>
             <span className="font-semibold tracking-tight">Aegis</span>
             <span className="hidden text-xs text-ink-400 sm:inline">Agentic IT Operations</span>
@@ -132,6 +135,15 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-[1500px] px-4 py-5">
+        {view.name === "dashboard" && (
+          <Dashboard
+            status={status}
+            onOpenDevice={(id) => setView({ name: "device", id })}
+            onOpenIncident={(number) => setView({ name: "incident", number })}
+            onOpenIncidents={() => setView({ name: "incidents" })}
+            onOpenApprovals={() => setView({ name: "approvals" })}
+          />
+        )}
         {view.name === "incidents" && (
           <Incidents status={status} onOpen={(number) => setView({ name: "incident", number })} />
         )}

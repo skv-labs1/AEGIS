@@ -21,6 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ..common import db as dbmod
+from ..common import health as healthmod
 from ..common import records
 from . import simulator
 
@@ -267,6 +268,161 @@ def get_patch_status(device_id: str) -> dict[str, Any]:
         }
     finally:
         conn.close()
+
+
+@server.tool(
+    name="get_fleet_summary",
+    title="Get fleet summary",
+    description=(
+        "Aggregate posture across the whole managed estate in one call: device counts by "
+        "health band and operating system, patch compliance including the most common "
+        "install failure reasons, and the devices in the worst health with the measurement "
+        "that is costing them the most. Use this for an estate-wide view instead of reading "
+        "devices one at a time."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_fleet_summary(worst_devices: int = 8, top_patches: int = 6) -> dict[str, Any]:
+    """Fleet-wide health, patch and operating system posture."""
+    conn = _conn()
+    try:
+        return _fleet_summary(conn, worst_devices=worst_devices, top_patches=top_patches)
+    finally:
+        conn.close()
+
+
+def _fleet_summary(
+    conn: sqlite3.Connection, *, worst_devices: int, top_patches: int
+) -> dict[str, Any]:
+    """Score every device once, from bulk reads rather than per-device queries.
+
+    ``records.compute_health`` issues two counting queries per device, which is
+    right for a single lookup and wasteful across the estate. The posture counts
+    are pulled here in two grouped queries instead, then fed to the same scoring
+    function, so a device's fleet score and its individual score always agree.
+    """
+    devices = {
+        r["device_id"]: json.loads(r["record"])
+        for r in conn.execute("SELECT device_id, record FROM devices").fetchall()
+    }
+    telemetry = {
+        r["device_id"]: simulator.read_telemetry(conn, r["device_id"])
+        for r in conn.execute("SELECT device_id FROM device_telemetry").fetchall()
+    }
+    missing_critical = {
+        r["device_id"]: r["c"]
+        for r in conn.execute(
+            "SELECT device_id, COUNT(*) c FROM patches WHERE status = 'missing'"
+            " AND severity = 'critical' GROUP BY device_id"
+        ).fetchall()
+    }
+    missing_any = {
+        r["device_id"]: r["c"]
+        for r in conn.execute(
+            "SELECT device_id, COUNT(*) c FROM patches WHERE status = 'missing' GROUP BY device_id"
+        ).fetchall()
+    }
+    outdated_critical = {
+        r["device_id"]: r["c"]
+        for r in conn.execute(
+            "SELECT device_id, COUNT(*) c FROM software WHERE is_outdated = 1"
+            " AND is_business_critical = 1 GROUP BY device_id"
+        ).fetchall()
+    }
+
+    bands: dict[str, int] = {"healthy": 0, "fair": 0, "degraded": 0, "critical": 0}
+    operating_systems: dict[str, int] = {}
+    compliance: dict[str, int] = {}
+    scored: list[dict[str, Any]] = []
+    for device_id, device in devices.items():
+        tel = telemetry.get(device_id)
+        os_name = device.get("os_name") or "unknown"
+        operating_systems[os_name] = operating_systems.get(os_name, 0) + 1
+        state = device.get("compliance_state") or "unknown"
+        compliance[state] = compliance.get(state, 0) + 1
+        if tel is None:
+            continue
+        health = healthmod.score_device(
+            tel,
+            missing_critical_patches=missing_critical.get(device_id, 0),
+            outdated_critical_software=outdated_critical.get(device_id, 0),
+        )
+        bands[health.band] = bands.get(health.band, 0) + 1
+        worst = max(health.components, key=lambda c: c.penalty, default=None)
+        scored.append(
+            {
+                "device_id": device_id,
+                "hostname": device.get("hostname"),
+                "os_name": os_name,
+                "health_score": round(health.score, 1),
+                "band": health.band,
+                "compliance_state": state,
+                "missing_critical_patches": missing_critical.get(device_id, 0),
+                "disk_used_pct": round(float(tel["disk_used_pct"]), 1),
+                "largest_penalty": (
+                    {"component": worst.name, "measurement": worst.measurement}
+                    if worst is not None and worst.penalty > 0
+                    else None
+                ),
+            }
+        )
+    scored.sort(key=lambda d: d["health_score"])
+
+    patch_rows = conn.execute(
+        "SELECT device_id, record FROM patches WHERE status = 'missing'"
+    ).fetchall()
+    by_patch: dict[str, dict[str, Any]] = {}
+    failure_reasons: dict[str, int] = {}
+    for row in patch_rows:
+        patch = json.loads(row["record"])
+        entry = by_patch.setdefault(
+            patch["patch_id"],
+            {
+                "patch_id": patch["patch_id"],
+                "title": patch.get("title"),
+                "severity": patch.get("severity"),
+                "classification": patch.get("classification"),
+                "devices_missing": 0,
+                "failure_reasons": {},
+            },
+        )
+        entry["devices_missing"] += 1
+        reason = patch.get("failure_reason")
+        if reason:
+            entry["failure_reasons"][reason] = entry["failure_reasons"].get(reason, 0) + 1
+            failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+    severity_rank = {"critical": 0, "important": 1, "moderate": 2, "low": 3}
+    ranked_patches = sorted(
+        by_patch.values(),
+        key=lambda p: (severity_rank.get(p["severity"], 9), -p["devices_missing"]),
+    )
+
+    scanned = conn.execute("SELECT COUNT(*) c FROM patch_scans").fetchone()["c"]
+    return {
+        "device_count": len(devices),
+        "scored_device_count": len(scored),
+        "health": {
+            "bands": bands,
+            "average_score": round(sum(d["health_score"] for d in scored) / len(scored), 1)
+            if scored
+            else None,
+            "band_thresholds": "healthy >= 85, fair >= 70, degraded >= 50, critical below 50",
+        },
+        "operating_systems": dict(
+            sorted(operating_systems.items(), key=lambda kv: -kv[1])
+        ),
+        "compliance": dict(sorted(compliance.items(), key=lambda kv: -kv[1])),
+        "patching": {
+            "devices_scanned": scanned,
+            "devices_missing_updates": len(missing_any),
+            "devices_missing_critical": len(missing_critical),
+            "missing_update_count": sum(missing_any.values()),
+            "missing_critical_count": sum(missing_critical.values()),
+            "top_missing_updates": ranked_patches[: max(0, int(top_patches))],
+            "failure_reasons": dict(sorted(failure_reasons.items(), key=lambda kv: -kv[1])),
+        },
+        "devices_needing_attention": scored[: max(0, int(worst_devices))],
+    }
 
 
 @server.tool(

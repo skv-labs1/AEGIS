@@ -1,0 +1,160 @@
+{
+  "_comment": "Pools and distributions for the generated background fleet. The eight hand-authored devices, ten users and twelve incidents in the other seed files are the demo's story records and are never touched by this. Everything here is filler that makes the fleet look like a real estate rather than a toy, and it is expanded deterministically by aegis_demo/common/fleet.py so the same input always produces the same fleet.",
+
+  "_numbering": "Generated incidents deliberately use INC-0100 to INC-0860, below the story range (INC-0871 to INC-1044). create_incident picks the next number from the maximum, so keeping generated numbers underneath leaves that behaviour, and the eval scenario that depends on it, exactly as it was.",
+
+  "counts": { "devices": 60, "incidents": 72, "spares": 7 },
+
+  "id_ranges": {
+    "user_start": 1100,
+    "device_start": 4500,
+    "asset_start": 95000,
+    "incident_start": 100,
+    "incident_end": 860
+  },
+
+  "first_names": [
+    "Amara", "Devon", "Ingrid", "Rashid", "Yuki", "Marco", "Freya", "Omar",
+    "Lena", "Tobias", "Nadia", "Callum", "Sinead", "Hugo", "Priyanka", "Emeka",
+    "Clara", "Mikael", "Fatima", "Desmond", "Anouk", "Rafael", "Noor", "Bjorn",
+    "Isabel", "Kwame", "Margit", "Santiago", "Leila", "Henrik", "Ayesha", "Pierre",
+    "Rosa", "Dmitri", "Chiara", "Kofi", "Astrid", "Vikram", "Elodie", "Marcus"
+  ],
+  "last_names": [
+    "Nakamura", "Oyelaran", "Lindholm", "Farouk", "Delacroix", "Bergstrom",
+    "Adeyemi", "Kovalenko", "Moreau", "Sandberg", "Haddad", "Whitfield",
+    "Castellano", "Novak", "Iyer", "Brennan", "Solberg", "Marchetti",
+    "Abiodun", "Petrov", "Larsen", "Duarte", "Halvorsen", "Mensah"
+  ],
+
+  "departments": [
+    { "name": "Finance", "cost_centre": "CC-4100", "weight": 3 },
+    { "name": "Sales", "cost_centre": "CC-2200", "weight": 5 },
+    { "name": "Operations", "cost_centre": "CC-3300", "weight": 4 },
+    { "name": "People", "cost_centre": "CC-5500", "weight": 2 },
+    { "name": "Technology", "cost_centre": "CC-6600", "weight": 5 },
+    { "name": "Customer Success", "cost_centre": "CC-7700", "weight": 4 },
+    { "name": "Legal", "cost_centre": "CC-8800", "weight": 1 },
+    { "name": "Marketing", "cost_centre": "CC-9900", "weight": 2 }
+  ],
+
+  "job_titles": [
+    "Account Executive", "Financial Analyst", "Operations Coordinator",
+    "Software Engineer", "Support Specialist", "Project Manager",
+    "Business Analyst", "Solutions Consultant", "Recruiter", "Legal Counsel",
+    "Marketing Manager", "Data Analyst", "Systems Administrator", "Product Manager"
+  ],
+
+  "locations": [
+    { "name": "Toronto, ON", "code": "TOR", "weight": 5 },
+    { "name": "Vancouver, BC", "code": "VAN", "weight": 3 },
+    { "name": "Calgary, AB", "code": "CAL", "weight": 2 },
+    { "name": "Remote (Berlin, DE)", "code": "BER", "weight": 2 },
+    { "name": "Remote (Manchester, UK)", "code": "MAN", "weight": 2 }
+  ],
+
+  "hardware": [
+    { "manufacturer": "Lenovo", "model": "ThinkPad T14 Gen 3", "os": "windows", "disk_gb": 512, "memory_gb": 16, "cost": 1789.0, "weight": 6 },
+    { "manufacturer": "Lenovo", "model": "ThinkPad X1 Carbon Gen 11", "os": "windows", "disk_gb": 512, "memory_gb": 16, "cost": 2549.0, "weight": 3 },
+    { "manufacturer": "Lenovo", "model": "ThinkPad L14 Gen 2", "os": "windows_old", "disk_gb": 256, "memory_gb": 8, "cost": 1450.0, "weight": 2 },
+    { "manufacturer": "Dell", "model": "Latitude 5440", "os": "windows", "disk_gb": 512, "memory_gb": 16, "cost": 1650.0, "weight": 4 },
+    { "manufacturer": "Dell", "model": "Latitude 5430 Rugged", "os": "windows", "disk_gb": 256, "memory_gb": 16, "cost": 2950.0, "weight": 1 },
+    { "manufacturer": "Apple", "model": "MacBook Pro 14-inch M3", "os": "macos", "disk_gb": 512, "memory_gb": 18, "cost": 3299.0, "weight": 2 },
+    { "manufacturer": "Apple", "model": "MacBook Air 13-inch M2", "os": "macos", "disk_gb": 256, "memory_gb": 16, "cost": 1899.0, "weight": 1 },
+    { "manufacturer": "Dell", "model": "XPS 15 9530", "os": "linux", "disk_gb": 1024, "memory_gb": 32, "cost": 3150.0, "weight": 1 }
+  ],
+
+  "operating_systems": {
+    "windows":     { "name": "Windows 11 Enterprise", "version": "23H2", "build": "22631.3155" },
+    "windows_old": { "name": "Windows 11 Enterprise", "version": "22H2", "build": "22621.2861" },
+    "macos":       { "name": "macOS Sonoma", "version": "14.4", "build": "23E214" },
+    "linux":       { "name": "Ubuntu", "version": "22.04 LTS", "build": "5.15.0-101" }
+  },
+
+  "_health_bands": "Weights are chosen so the whole fleet, including the eight story devices, lands roughly at 55% healthy, 25% fair, 13% degraded and 7% critical. A fleet where everything is green has nothing to show; one where everything is red is not believable.",
+  "health_profiles": [
+    {
+      "band": "healthy", "weight": 33,
+      "disk_used_pct": [28, 62], "cpu_avg_pct": [22, 44], "memory_used_pct": [40, 66],
+      "days_since_reboot": [1, 9], "crash_chance": 0.0,
+      "missing_important": 0, "missing_critical": 0, "outdated_chance": 0.1
+    },
+    {
+      "band": "fair", "weight": 17,
+      "disk_used_pct": [63, 78], "cpu_avg_pct": [40, 58], "memory_used_pct": [62, 78],
+      "days_since_reboot": [6, 22], "crash_chance": 0.15,
+      "missing_important": 1, "missing_critical": 0, "outdated_chance": 0.35
+    },
+    {
+      "band": "degraded", "weight": 7,
+      "disk_used_pct": [79, 89], "cpu_avg_pct": [58, 76], "memory_used_pct": [74, 88],
+      "days_since_reboot": [18, 44], "crash_chance": 0.6,
+      "missing_important": 1, "missing_critical": 1, "outdated_chance": 0.7
+    },
+    {
+      "band": "critical", "weight": 3,
+      "disk_used_pct": [90, 97], "cpu_avg_pct": [74, 92], "memory_used_pct": [84, 95],
+      "days_since_reboot": [32, 71], "crash_chance": 0.9,
+      "missing_important": 1, "missing_critical": 2, "outdated_chance": 0.9
+    }
+  ],
+
+  "crashing_processes": ["OUTLOOK.EXE", "TEAMS.EXE", "CHROME.EXE", "EXCEL.EXE", "NWVPN.EXE"],
+
+  "software_catalog": [
+    { "name": "Microsoft 365 Apps for enterprise", "publisher": "Microsoft", "current": "16.0.17928.20156", "stale": "16.0.15601.20148", "critical": true, "platforms": ["windows", "windows_old"] },
+    { "name": "Microsoft Teams", "publisher": "Microsoft", "current": "24074.2705.2874.5567", "stale": "23320.1809.2547.8890", "critical": true, "platforms": ["windows", "windows_old", "macos"] },
+    { "name": "Google Chrome", "publisher": "Google", "current": "123.0.6312.106", "stale": "119.0.6045.199", "critical": false, "platforms": ["windows", "windows_old", "macos", "linux"] },
+    { "name": "Northwind VPN Client", "publisher": "Northwind IT", "current": "7.4.2", "stale": "6.8.4", "critical": true, "platforms": ["windows", "windows_old", "macos", "linux"] },
+    { "name": "Northwind Endpoint Protection", "publisher": "Northwind IT", "current": "5.2.9", "stale": "4.9.1", "critical": true, "platforms": ["windows", "windows_old", "macos"] },
+    { "name": "Adobe Acrobat Reader", "publisher": "Adobe", "current": "24.001.20629", "stale": "23.006.20380", "critical": false, "platforms": ["windows", "windows_old", "macos"] },
+    { "name": "Slack", "publisher": "Slack Technologies", "current": "4.36.140", "stale": "4.29.149", "critical": false, "platforms": ["windows", "windows_old", "macos", "linux"] },
+    { "name": "Zoom Workplace", "publisher": "Zoom", "current": "6.0.2", "stale": "5.14.10", "critical": false, "platforms": ["windows", "windows_old", "macos"] },
+    { "name": "Visual Studio Code", "publisher": "Microsoft", "current": "1.88.1", "stale": "1.81.0", "critical": false, "platforms": ["windows", "macos", "linux"] },
+    { "name": "SAP GUI for Windows", "publisher": "SAP", "current": "7.70 PL14", "stale": "7.70 PL12", "critical": true, "platforms": ["windows", "windows_old"] },
+    { "name": "Salesforce CLI", "publisher": "Salesforce", "current": "2.36.1", "stale": "2.28.6", "critical": false, "platforms": ["windows", "macos", "linux"] }
+  ],
+
+  "patch_catalog": {
+    "critical": [
+      { "patch_id": "KB5036893", "title": "2024-04 Cumulative Update for Windows 11 Version 23H2" },
+      { "patch_id": "KB5037591", "title": "Servicing Stack Update for Windows 11 Version 23H2" },
+      { "patch_id": "KB5036894", "title": "2024-04 Cumulative Update for Windows 11 Version 22H2" }
+    ],
+    "important": [
+      { "patch_id": "KB5036620", "title": "2024-03 .NET Framework Cumulative Update" },
+      { "patch_id": "KB5035942", "title": "2024-03 Servicing Update for Microsoft Edge" },
+      { "patch_id": "KB5034441", "title": "Windows Recovery Environment Update" }
+    ]
+  },
+  "patch_failure_reasons": [
+    "0x80070070 - insufficient disk space",
+    "0x8024402c - could not reach the update service",
+    "0x800f0922 - update could not be installed",
+    null, null, null
+  ],
+
+  "incident_templates": [
+    { "short": "Laptop running slowly in the afternoon", "category": "End User Compute", "subcategory": "Performance", "device": true },
+    { "short": "Teams call quality poor on wifi", "category": "Network", "subcategory": "Connectivity", "device": true },
+    { "short": "Cannot connect to VPN from home", "category": "Network", "subcategory": "Remote Access", "device": true },
+    { "short": "Outlook search returning no results", "category": "End User Compute", "subcategory": "Application", "device": true },
+    { "short": "Password reset required for shared mailbox", "category": "Access", "subcategory": "Identity", "device": false },
+    { "short": "Printer on 4th floor not responding", "category": "End User Compute", "subcategory": "Peripheral", "device": false },
+    { "short": "Request access to finance reporting folder", "category": "Access", "subcategory": "Permissions", "device": false },
+    { "short": "Laptop battery draining within two hours", "category": "End User Compute", "subcategory": "Hardware", "device": true },
+    { "short": "Excel freezing when opening large workbook", "category": "End User Compute", "subcategory": "Application", "device": true },
+    { "short": "Shared drive mapping lost after restart", "category": "Storage", "subcategory": "File Share", "device": true },
+    { "short": "Software installation request for design tool", "category": "End User Compute", "subcategory": "Provisioning", "device": false },
+    { "short": "Docking station not detecting second monitor", "category": "End User Compute", "subcategory": "Peripheral", "device": true },
+    { "short": "Windows updates failing repeatedly", "category": "End User Compute", "subcategory": "Patching", "device": true },
+    { "short": "Mobile device enrolment failing", "category": "Mobile", "subcategory": "Enrolment", "device": false },
+    { "short": "Disk almost full warning on laptop", "category": "End User Compute", "subcategory": "Performance", "device": true },
+    { "short": "New starter equipment request", "category": "End User Compute", "subcategory": "Provisioning", "device": false }
+  ],
+
+  "assignment_groups": ["Service Desk", "Network Operations", "End User Compute", "Identity and Access"],
+
+  "_repeat_pattern": "A handful of devices get several incidents that were all closed as a workaround. This is what the dashboard's repeat-incident panel surfaces, and it is the same pattern the INC-1042 story turns on: a symptom cleared over and over while the cause survives.",
+  "repeat_offenders": { "devices": 6, "incidents_each": [2, 4] }
+}

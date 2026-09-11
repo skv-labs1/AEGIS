@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db as dbmod
+from .fleet import generate as generate_fleet
 from .health import score_device
 
 SEED_DIR = Path(__file__).resolve().parent.parent / "seed"
@@ -146,6 +148,19 @@ def build(conn: sqlite3.Connection, *, now: datetime | None = None) -> dict[str,
     software_raw = _load("software")["software"]
     patches_raw = _load("patches")["patches"]
     incidents = _load("incidents")["incidents"]
+
+    # The hand-authored records above are the demo's story. The generated fleet
+    # is appended after them so a fleet-wide view has something to show; it uses
+    # its own identifier ranges and cannot collide with or reorder the story
+    # records. Set AEGIS_DEMO_NO_FLEET=1 to seed the story records alone.
+    if not os.environ.get("AEGIS_DEMO_NO_FLEET"):
+        fleet = generate_fleet()
+        users += fleet["users"]
+        devices += fleet["devices"]
+        assets += fleet["assets"]
+        software_raw += fleet["software"]
+        patches_raw += fleet["patches"]
+        incidents += fleet["incidents"]
 
     software_by_device = {s["device_id"]: s["installed"] for s in software_raw}
     patches_by_device = {p["device_id"]: p for p in patches_raw}

@@ -270,12 +270,19 @@ class AegisGateway:
         arguments: dict[str, Any],
         *,
         preapproved: bool = False,
+        capture_evidence: bool = True,
     ) -> dict[str, Any]:
         """Policy, approval, audit, upstream call, evidence. In that order.
 
         ``preapproved`` is set only by the workflow, after a human has already
         decided on the proposal that authorises this exact call. It skips the
         second approval prompt; it never skips policy, audit or evidence.
+
+        ``capture_evidence`` is cleared only by the console's own background
+        reads, such as the operations dashboard refreshing. Evidence is the
+        record of what an agent saw while reaching a conclusion, so a screen
+        refresh does not belong in it. The call is still classified by policy
+        and still written to the audit trail; only the evidence row is skipped.
         """
         # Read once, at the top of this call. Safe against everything that can
         # happen during the awaits below: a ContextVar read inside this task
@@ -386,14 +393,15 @@ class AegisGateway:
             }
 
         # 4. Keep what the agent saw, because the live record will move on.
-        audit.capture_evidence(
-            source_system=tool.upstream,
-            tool_name=qualified_name,
-            payload=outcome.structured,
-            subject=self._subject(arguments),
-            summary=self._summarise(qualified_name, arguments, True),
-            audit_event_id=event_id,
-        )
+        if capture_evidence:
+            audit.capture_evidence(
+                source_system=tool.upstream,
+                tool_name=qualified_name,
+                payload=outcome.structured,
+                subject=self._subject(arguments),
+                summary=self._summarise(qualified_name, arguments, True),
+                audit_event_id=event_id,
+            )
 
         payload = dict(outcome.structured or {})
         if outcome.structured is None and outcome.text:

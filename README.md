@@ -21,7 +21,7 @@ device-changing action behind a proposal a named human approves, verifies remedi
 against before and after measurements, and shows all of it live in an operations console.
 Investigations can be driven by a built-in engine on a free-tier model, by any MCP host
 such as Claude Code, or replayed from a stored trace with no API key at all.
-**149 tests pass** across both packages.
+**164 tests pass** across both packages.
 
 - [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — a ten-minute walkthrough with the real numbers
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the design and why each piece is there
@@ -154,6 +154,13 @@ make evals     # score the eval scenarios, from the audit trail
 make pending   # proposals waiting for a human
 make audit     # the append-only trail
 ```
+
+The **Dashboard** is the landing page: fleet health, the patch estate with the install
+failure reasons behind it, workaround-closed incidents and repeat callers, alongside what
+Aegis itself has done — approvals, verified remediations, policy refusals. Everything above
+the governance figures is read from the three connected systems through the gateway, so it
+is classified and audited like any other tool call, and pointing the gateway at a live ITSM
+changes it with no code change here.
 
 The **Policy** page in the console shows how every tool is classified and how it is
 reachable: callable, proposal only, workflow only, or refused outright. The **Evaluation**

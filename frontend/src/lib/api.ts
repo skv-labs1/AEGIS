@@ -86,6 +86,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action, arguments: {}, rationale }),
     }),
+  dashboard: () => request<Dashboard>("/dashboard"),
   metrics: () => request<Metrics>("/metrics"),
   audit: (investigationId?: number) =>
     request<{ events: AuditEvent[] }>(
@@ -329,4 +330,96 @@ export type Metrics = {
     median_tool_latency_ms: number | null;
   };
   by_provider: Record<string, { calls: number; input_tokens: number; output_tokens: number }>;
+};
+
+export type Dashboard = {
+  generated_at: string;
+  cached: boolean;
+  sources: { fleet: string | null; incidents: string | null; assets: string | null };
+  fleet: {
+    device_count: number;
+    scored_device_count: number;
+    health: { bands: Record<string, number>; average_score: number | null; band_thresholds: string };
+    operating_systems: Record<string, number>;
+    compliance: Record<string, number>;
+    patching: {
+      devices_scanned: number;
+      devices_missing_updates: number;
+      devices_missing_critical: number;
+      missing_update_count: number;
+      missing_critical_count: number;
+      top_missing_updates: {
+        patch_id: string;
+        title: string | null;
+        severity: string | null;
+        classification: string | null;
+        devices_missing: number;
+        failure_reasons: Record<string, number>;
+      }[];
+      failure_reasons: Record<string, number>;
+    };
+    devices_needing_attention: {
+      device_id: string;
+      hostname: string | null;
+      os_name: string;
+      health_score: number;
+      band: string;
+      compliance_state: string;
+      missing_critical_patches: number;
+      disk_used_pct: number;
+      largest_penalty: { component: string; measurement: string } | null;
+    }[];
+  };
+  incidents: {
+    total: number;
+    open: number;
+    by_state: Record<string, number>;
+    by_priority: Record<string, number>;
+    by_category: Record<string, number>;
+    by_channel: Record<string, number>;
+    opened_recently: { days: number; count: number };
+    ageing: { open_average_days: number | null; open_oldest_days: number | null };
+    resolution_quality: {
+      resolved: number;
+      resolved_as_workaround: number;
+      workaround_rate_pct: number | null;
+      reopened: number;
+      note: string;
+      examples: { number: string; short_description: string; device_id: string | null; resolved_days_ago: number | null }[];
+    };
+    repeats: {
+      devices_affected: number;
+      incidents_on_repeat_devices: number;
+      callers_affected: number;
+      incidents_from_repeat_callers: number;
+    };
+    repeat_callers: {
+      caller_id: string;
+      display_name: string | null;
+      department: string | null;
+      vip: boolean;
+      incidents: number;
+      workarounds: number;
+    }[];
+    repeat_devices: { device_id: string; incidents: number; workarounds: number; categories: string[] }[];
+  };
+  assets: {
+    total: number;
+    by_lifecycle_state: Record<string, number>;
+    by_category: Record<string, number>;
+    warranty: { in_warranty: number; out_of_warranty: number; expiring_within_days: number; expiring_soon: number };
+    refresh: {
+      overdue: number;
+      average_age_days: number | null;
+      candidates: { asset_tag: string; device_id: string | null; model: string | null; days_overdue: number; warranty_active: boolean }[];
+    };
+    spares_by_subcategory: Record<string, number>;
+    purchase_cost_total: number;
+  };
+  governance: {
+    investigations: { total: number; by_state: Record<string, number>; funnel: { state: string; count: number }[] };
+    approvals: { pending: number; approved: number; rejected: number };
+    verification: { total: number; confirmed: number; not_confirmed: number; disagreements: number };
+    policy: { refusals: number; governed_tool_calls: number };
+  };
 };

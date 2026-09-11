@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -190,11 +192,123 @@ def create_app() -> FastAPI:
 # -- helpers ------------------------------------------------------------------
 
 
-async def _tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    result = await console.gateway.invoke(name, arguments)
+async def _tool(
+    name: str, arguments: dict[str, Any], *, capture_evidence: bool = True
+) -> dict[str, Any]:
+    result = await console.gateway.invoke(
+        name, arguments, capture_evidence=capture_evidence
+    )
     if result.get("refused"):
         raise HTTPException(status_code=403, detail=result.get("reason", "Refused by policy."))
     return result
+
+
+# The dashboard fans out to three upstream systems. Several people watching the
+# demo at once should not turn one screen into a steady load on them, so the
+# assembled answer is held briefly and shared. The lock means a burst of
+# simultaneous first requests produces one fan-out, not one each.
+DASHBOARD_CACHE_SECONDS = 20.0
+_dashboard_cache: dict[str, Any] = {"at": 0.0, "payload": None}
+_dashboard_lock = asyncio.Lock()
+
+
+async def _dashboard_estate(*, force: bool = False) -> dict[str, Any]:
+    """Fleet summaries from the connected systems, cached for a few seconds."""
+    now = time.monotonic()
+    cached = _dashboard_cache["payload"]
+    if not force and cached is not None and now - _dashboard_cache["at"] < DASHBOARD_CACHE_SECONDS:
+        return {**cached, "cached": True}
+
+    async with _dashboard_lock:
+        now = time.monotonic()
+        cached = _dashboard_cache["payload"]
+        if (
+            not force
+            and cached is not None
+            and now - _dashboard_cache["at"] < DASHBOARD_CACHE_SECONDS
+        ):
+            return {**cached, "cached": True}
+
+        fleet, incidents_, assets = await asyncio.gather(
+            _tool("endpoint_get_fleet_summary", {}, capture_evidence=False),
+            _tool("itsm_get_incident_summary", {}, capture_evidence=False),
+            _tool("itam_get_asset_summary", {}, capture_evidence=False),
+        )
+        payload = {
+            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "fleet": {k: v for k, v in fleet.items() if k != "_aegis"},
+            "incidents": {k: v for k, v in incidents_.items() if k != "_aegis"},
+            "assets": {k: v for k, v in assets.items() if k != "_aegis"},
+            "sources": {
+                "fleet": fleet.get("_aegis", {}).get("source_system"),
+                "incidents": incidents_.get("_aegis", {}).get("source_system"),
+                "assets": assets.get("_aegis", {}).get("source_system"),
+            },
+        }
+        _dashboard_cache["payload"] = payload
+        _dashboard_cache["at"] = time.monotonic()
+        return {**payload, "cached": False}
+
+
+def _governance_snapshot() -> dict[str, Any]:
+    """What Aegis itself has done: the half of the dashboard no ITSM can supply."""
+    from ..db.models import Verification
+
+    with session_scope() as db:
+        investigations = db.query(Investigation).all()
+        pending = db.query(Proposal).filter(Proposal.state == "pending").count()
+        proposals = db.query(Proposal).all()
+        verifications = db.query(Verification).all()
+        refusals = (
+            db.query(AuditEvent).filter(AuditEvent.event_type == "policy.refused").count()
+        )
+        tool_calls = db.query(AuditEvent).filter(AuditEvent.event_type == "tool.called").count()
+
+    by_state: dict[str, int] = {}
+    for inv in investigations:
+        by_state[inv.state] = by_state.get(inv.state, 0) + 1
+
+    # A proposal that a human approved moves on to "executed" (or "failed") as
+    # soon as it runs, so counting only "approved" would report zero approvals
+    # for a demo that has just completed successfully.
+    granted = {"approved", "executed", "failed"}
+    # The measured verdict vocabulary is resolved / partially_resolved /
+    # not_resolved / unmeasurable. Both of the first two mean the before-and-
+    # after measurement showed a real improvement.
+    confirmed = {"resolved", "partially_resolved"}
+    return {
+        "investigations": {
+            "total": len(investigations),
+            "by_state": by_state,
+            # The state machine in order, so the console can draw it as a funnel
+            # without knowing the workflow's internals.
+            "funnel": [
+                {"state": state, "count": by_state.get(state, 0)}
+                for state in (
+                    "investigating",
+                    "diagnosed",
+                    "proposed",
+                    "awaiting_approval",
+                    "approved",
+                    "executed",
+                    "verified",
+                    "resolved",
+                )
+            ],
+        },
+        "approvals": {
+            "pending": pending,
+            "approved": sum(1 for p in proposals if p.state in granted),
+            "rejected": sum(1 for p in proposals if p.state == "rejected"),
+        },
+        "verification": {
+            "total": len(verifications),
+            "confirmed": sum(1 for v in verifications if v.measured_verdict in confirmed),
+            "not_confirmed": sum(1 for v in verifications if v.measured_verdict not in confirmed),
+            "disagreements": sum(1 for v in verifications if not v.agreed),
+        },
+        "policy": {"refusals": refusals, "governed_tool_calls": tool_calls},
+    }
 
 
 def _register(app: FastAPI) -> None:
@@ -544,6 +658,24 @@ def _register(app: FastAPI) -> None:
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # -- operations dashboard -------------------------------------------------
+
+    @app.get("/api/dashboard")
+    async def dashboard(refresh: bool = False) -> dict[str, Any]:
+        """Estate-wide view, assembled from the same governed path as everything else.
+
+        The three fleet summaries come from the connected enterprise systems
+        through the gateway, so they are policy-classified and audited like any
+        other tool call. They are read-only and carry no per-incident meaning,
+        so they are not captured as evidence: evidence records what an agent saw
+        while forming a conclusion, not what a screen showed while refreshing.
+
+        Governance figures below them come from Aegis's own store. Point the
+        gateway at a live ITSM and the top half changes; this half does not.
+        """
+        estate = await _dashboard_estate(force=refresh)
+        return {**estate, "governance": _governance_snapshot()}
+
     # -- audit and live stream ------------------------------------------------
 
     @app.get("/api/metrics")
@@ -675,6 +807,7 @@ def _register(app: FastAPI) -> None:
             ):
                 db.execute(__import__("sqlalchemy").text(f"DELETE FROM {table}"))
         console.runs.clear()
+        _dashboard_cache["payload"] = None
         return {"reset": True, "seeded": counts}
 
 
